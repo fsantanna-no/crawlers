@@ -21,13 +21,13 @@ Everything lives under `rss/`:
 rss/
     crawler.sh          ← main script
     tst/
-        runner.sh       ← test runner
-        t_detect.sh     ← test: feed type detection
-        t_extract.sh    ← test: jq item extraction
-        t_sha256.sh     ← test: sha256 filename
-        t_dedup.sh      ← test: idempotency
-        t_rfc2822.sh    ← test: message format
-        t_pipeline.sh   ← test: end-to-end
+        Makefile        ← test runner
+        detect.sh       ← test: feed type detection
+        extract.sh      ← test: jq item extraction
+        sha256.sh       ← test: sha256 filename
+        dedup.sh        ← test: idempotency
+        rfc2822.sh      ← test: message format
+        pipeline.sh     ← test: end-to-end
         fixtures/
             akita.xml   ← saved akitaonrails feed sample
             hn.xml      ← saved HN official feed sample
@@ -224,7 +224,7 @@ Result:
 
 Shell tests with assert-like checks.
 XML fixtures for offline testing.
-Run: `cd rss && bash tst/runner.sh`
+Run: `cd rss && make -C tst`
 
 | Step | Test                                     | Implement         |
 |------|------------------------------------------|-------------------|
@@ -251,7 +251,7 @@ Run: `cd rss && bash tst/runner.sh`
 
 ## Verification
 
-1. `cd rss && bash tst/runner.sh` → all tests pass
+1. `cd rss && make -C tst` → all tests pass
 2. `rss/crawler.sh /tmp/feeds <url>` → manual test
 3. Re-run same command → "0 new" (idempotency)
 
