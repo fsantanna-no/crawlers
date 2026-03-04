@@ -22,7 +22,6 @@ rss/
     crawler.sh          ← main script
     tst/
         runner.sh       ← test runner
-        t_subdir.sh     ← test: URL→subdir
         t_detect.sh     ← test: feed type detection
         t_extract.sh    ← test: jq item extraction
         t_sha256.sh     ← test: sha256 filename
@@ -40,11 +39,9 @@ README.md               ← update with usage
 ## Architecture
 
 ```
-rss/crawler.sh <root-dir> <url>
+rss/crawler.sh <output-dir> <url>
 ┌─────────────────────────────────────────────────┐
-│ 1. Derive subdir from url:                      │
-│    https://news.ycombinator.com/rss              │
-│    → root-dir/news.ycombinator.com/rss           │
+│ 1. mkdir -p <output-dir>                         │
 │                                                  │
 │ 2. curl -sL <url> | yq -o json -p xml           │
 │                                                  │
@@ -53,7 +50,7 @@ rss/crawler.sh <root-dir> <url>
 │ 4. For each item:                                │
 │    filename = sha256(guid or link)               │
 │    if file exists → skip                         │
-│    format RFC 2822 → write to subdir/filename    │
+│    format RFC 2822 → write to output-dir/filename│
 │                                                  │
 │ 5. Summary to stderr                             │
 └─────────────────────────────────────────────────┘
@@ -61,49 +58,21 @@ rss/crawler.sh <root-dir> <url>
 
 ## Directory Structure
 
-Feed URL → domain/path (scheme and query stripped).
-Dirs contain only item files (sha256 hashes).
+User decides the output directory explicitly.
+Each dir contains only item files (sha256 hashes).
 
 ```
-root-dir/
-    www.akitaonrails.com/
-        index.xml/
-            a1b2c3d4...   ← sha256(guid)
-            f7e8d9c0...
-    news.ycombinator.com/
-        rss/
-            c3d4e5f6...
-            d9c0b1a2...
-    lobste.rs/
-        rss/
-            e5f6a1b2...
-    github.blog/
-        all.atom/
-            b3c4d5e6...
-```
-
-### URL → subdir derivation
-
-```
-https://www.akitaonrails.com/index.xml
-  → root-dir/www.akitaonrails.com/index.xml/
-
-https://news.ycombinator.com/rss
-  → root-dir/news.ycombinator.com/rss/
-
-https://lobste.rs/rss
-  → root-dir/lobste.rs/rss/
-```
-
-In shell:
-```sh
-subdir=$(echo "$url" \
-    | sed 's|^https\?://||' \
-    | sed 's|?.*||' \
-    | sed 's|#.*||' \
-    | sed 's|/$||')
-item_dir="$root_dir/$subdir"
-mkdir -p "$item_dir"
+/home/chico/feeds/
+    akita/
+        a1b2c3d4...   ← sha256(guid)
+        f7e8d9c0...
+    hn/
+        c3d4e5f6...
+        d9c0b1a2...
+    lobster/
+        e5f6a1b2...
+    github/
+        b3c4d5e6...
 ```
 
 ## Idempotency — sha256(guid) as filename
@@ -137,7 +106,7 @@ Third run:   12 files exist → 0 new, nothing written
 ## crawler.sh
 
 ```
-rss/crawler.sh <root-dir> <url>
+rss/crawler.sh <output-dir> <url>
 ```
 
 - Single feed per invocation
@@ -148,23 +117,22 @@ rss/crawler.sh <root-dir> <url>
 ### Algorithm
 
 ```
-1. Parse args (root_dir, url)
-2. Derive item_dir from url (domain/path)
-3. mkdir -p item_dir
-4. curl -sL "$url" | yq -o json -p xml > tmp
-5. Detect feed type (jq: .rss or .feed)
-6. Extract items via jq → one JSON object per line
-7. count_new=0, count_total=0
-8. For each item:
+1. Parse args (output_dir, url)
+2. mkdir -p output_dir
+3. curl -sL "$url" | yq -o json -p xml > tmp
+4. Detect feed type (jq: .rss or .feed)
+5. Extract items via jq → one JSON object per line
+6. count_new=0, count_total=0
+7. For each item:
    a. id = guid or link (skip if neither)
    b. filename = sha256(id)
    c. count_total++
    d. if file exists → skip
    e. Extract: title, link, date, body, author
    f. Format RFC 2822
-   g. Write to item_dir/$filename
+   g. Write to output_dir/$filename
    h. count_new++
-9. Print summary to stderr
+8. Print summary to stderr
 ```
 
 ### RFC 2822 Message Format
@@ -220,25 +188,25 @@ testing.
 ```crontab
 # Fetch Akita on Rails every hour
 0 * * * * /x/freechains/crawlers/rss/crawler.sh \
-    /home/chico/feeds \
+    /home/chico/feeds/akita \
     "https://www.akitaonrails.com/index.xml" \
     2>> /home/chico/log/rss.log
 
 # Fetch HN front page every 15 minutes
 */15 * * * * /x/freechains/crawlers/rss/crawler.sh \
-    /home/chico/feeds \
+    /home/chico/feeds/hn \
     "https://news.ycombinator.com/rss" \
     2>> /home/chico/log/rss.log
 
 # Fetch Lobsters every 30 minutes
 */30 * * * * /x/freechains/crawlers/rss/crawler.sh \
-    /home/chico/feeds \
+    /home/chico/feeds/lobster \
     "https://lobste.rs/rss" \
     2>> /home/chico/log/rss.log
 
 # Fetch GitHub Blog every 2 hours
 0 */2 * * * /x/freechains/crawlers/rss/crawler.sh \
-    /home/chico/feeds \
+    /home/chico/feeds/github \
     "https://github.blog/all.atom" \
     2>> /home/chico/log/rss.log
 ```
@@ -246,10 +214,10 @@ testing.
 Result:
 ```
 /home/chico/feeds/
-    www.akitaonrails.com/index.xml/...
-    news.ycombinator.com/rss/...
-    lobste.rs/rss/...
-    github.blog/all.atom/...
+    akita/...
+    hn/...
+    lobster/...
+    github/...
 ```
 
 ## Incremental Implementation (test-first)
@@ -260,28 +228,26 @@ Run: `cd rss && bash tst/runner.sh`
 
 | Step | Test                                     | Implement         |
 |------|------------------------------------------|-------------------|
-| 1.1  | URL → subdir: strip scheme/query         | subdir derivation |
-| 1.2  | URL → subdir: various URL formats        | (edge cases)      |
-| 2.1  | yq: akita.xml → valid JSON               | fetch + convert   |
-| 2.2  | yq: hn.xml → valid JSON                  | (same)            |
-| 2.3  | yq: lobster.xml → valid JSON             | (same)            |
-| 2.4  | yq: github.xml → valid JSON              | (same)            |
-| 3.1  | jq: detect RSS feed type                 | detect logic      |
-| 3.2  | jq: detect Atom feed type                | (same)            |
-| 4.1  | jq: extract akita items (all fields)     | extract jq filter |
-| 4.2  | jq: extract HN items (no guid)           | (guid fallback)   |
-| 4.3  | jq: extract lobster items                | (same filter)     |
-| 4.4  | jq: extract GitHub Blog Atom entries     | Atom extract      |
-| 4.5  | jq: single item wrapped as array         | (edge case)       |
-| 5.1  | sha256: deterministic filename from guid | sha256 func       |
-| 5.2  | dedup: first run, all items new          | file-exists check |
-| 5.3  | dedup: second run, no new items          | (same)            |
-| 6.1  | RFC 2822: valid message format           | format logic      |
-| 6.2  | RFC 2822: HTML stripped from body        | (same)            |
-| 7.1  | Full pipeline: akita end-to-end          | integration       |
-| 7.2  | Full pipeline: HN end-to-end             | integration       |
-| 7.3  | Full pipeline: lobster end-to-end        | integration       |
-| 7.4  | Full pipeline: GitHub Blog end-to-end    | integration       |
+| 1.1  | yq: akita.xml → valid JSON               | fetch + convert   |
+| 1.2  | yq: hn.xml → valid JSON                  | (same)            |
+| 1.3  | yq: lobster.xml → valid JSON             | (same)            |
+| 1.4  | yq: github.xml → valid JSON              | (same)            |
+| 2.1  | jq: detect RSS feed type                 | detect logic      |
+| 2.2  | jq: detect Atom feed type                | (same)            |
+| 3.1  | jq: extract akita items (all fields)     | extract jq filter |
+| 3.2  | jq: extract HN items (no guid)           | (guid fallback)   |
+| 3.3  | jq: extract lobster items                | (same filter)     |
+| 3.4  | jq: extract GitHub Blog Atom entries     | Atom extract      |
+| 3.5  | jq: single item wrapped as array         | (edge case)       |
+| 4.1  | sha256: deterministic filename from guid | sha256 func       |
+| 4.2  | dedup: first run, all items new          | file-exists check |
+| 4.3  | dedup: second run, no new items          | (same)            |
+| 5.1  | RFC 2822: valid message format           | format logic      |
+| 5.2  | RFC 2822: HTML stripped from body        | (same)            |
+| 6.1  | Full pipeline: akita end-to-end          | integration       |
+| 6.2  | Full pipeline: HN end-to-end             | integration       |
+| 6.3  | Full pipeline: lobster end-to-end        | integration       |
+| 6.4  | Full pipeline: GitHub Blog end-to-end    | integration       |
 
 ## Verification
 
@@ -291,16 +257,15 @@ Run: `cd rss && bash tst/runner.sh`
 
 ## Progress
 
-- [ ] Install yq
-- [ ] Save XML fixtures (akita, hn, lobster, github)
-- [ ] Steps 1: URL → subdir
-- [ ] Steps 2: yq XML→JSON
-- [ ] Steps 3: Detect feed type
-- [ ] Steps 4: Extract items (jq filters)
-- [ ] Steps 5: sha256 + dedup
-- [ ] Steps 6: RFC 2822 formatting
-- [ ] Steps 7: Integration tests
+- [x] Install yq
+- [x] Save XML fixtures (akita, hn, lobster, github)
+- [x] Skeleton crawler.sh (shebang, arg parsing)
+- [ ] Steps 1: yq XML→JSON
+- [ ] Steps 2: Detect feed type
+- [ ] Steps 3: Extract items (jq filters)
+- [ ] Steps 4: sha256 + dedup
+- [ ] Steps 5: RFC 2822 formatting
+- [ ] Steps 6: Integration tests
 - [ ] crawler.sh complete
 - [ ] Update README.md
 - [ ] Manual testing
-- [ ] CI/CD integration
