@@ -3,121 +3,141 @@
 ## Context
 
 The `freechains/crawlers` repo is empty (just LICENSE + README).
-We need a Lua RSS/Atom feed parser module and a shell crawler
-script that produces MH-format RFC 2822 email files,
-idempotent for cron usage.
+We need a shell crawler script that fetches RSS/Atom feeds and
+saves items as RFC 2822 files, idempotent for cron.
 
 ## Dependencies
 
 - `curl` — HTTP/HTTPS fetching
 - `yq` (mikefarah) — single Go binary, XML→JSON
 - `jq` — installed, JSON processing
-- `sha256sum` — installed, Message-ID generation
-- `json4lua` 0.9.30 — installed, for Lua module
+- `sha256sum` — installed, item filenames + Message-ID
 
-## Files
+## File Layout
 
-| File          | Action | Description                            |
-|---------------|--------|----------------------------------------|
-| `rss.lua`     | Create | Lua module: JSON→Lua table normalizer  |
-| `crawler.sh`  | Create | Shell script: fetch, dedup, MH, RFC2822|
-| `tst/rss.lua` | Create | Unit tests for rss.lua module          |
-| `README.md`   | Update | Usage, examples, sample crontab        |
+Everything lives under `rss/`:
+
+```
+rss/
+    crawler.sh          ← main script
+    tst/
+        runner.sh       ← test runner
+        t_subdir.sh     ← test: URL→subdir
+        t_detect.sh     ← test: feed type detection
+        t_extract.sh    ← test: jq item extraction
+        t_sha256.sh     ← test: sha256 filename
+        t_dedup.sh      ← test: idempotency
+        t_rfc2822.sh    ← test: message format
+        t_pipeline.sh   ← test: end-to-end
+        fixtures/
+            akita.xml   ← saved akitaonrails feed sample
+            hn.xml      ← saved HN official feed sample
+            lobster.xml ← saved lobste.rs feed sample
+            github.xml  ← saved GitHub Blog Atom sample
+README.md               ← update with usage
+```
 
 ## Architecture
 
 ```
-crawler.sh (shell script)
-┌───────────────────────────────────────────┐
-│ curl <url>                                │
-│   │                                       │
-│   ▼                                       │
-│ yq -o json -p xml                         │
-│   │                                       │
-│   ▼                                       │
-│ jq (extract items, dedup against .seen)   │
-│   │                                       │
-│   ▼                                       │
-│ for each new item:                        │
-│   format RFC 2822 message                 │
-│   write to <output-dir>/<number>          │
-│   append guid to .seen                    │
-│                                           │
-│ print summary to stderr                   │
-└───────────────────────────────────────────┘
-
-rss.lua (Lua module — reusable from other Lua code)
-┌───────────────────────────────────────────┐
-│ rss.get(url)                              │
-│   curl <url> | yq -o json -p xml          │
-│   json.decode()                           │
-│   normalize RSS/Atom → common Lua table   │
-│                                           │
-│ rss.parse(json_str)                       │
-│   json.decode() + normalize               │
-└───────────────────────────────────────────┘
+rss/crawler.sh <root-dir> <url>
+┌─────────────────────────────────────────────────┐
+│ 1. Derive subdir from url:                      │
+│    https://news.ycombinator.com/rss              │
+│    → root-dir/news.ycombinator.com/rss           │
+│                                                  │
+│ 2. curl -sL <url> | yq -o json -p xml           │
+│                                                  │
+│ 3. jq: extract items as JSON lines               │
+│                                                  │
+│ 4. For each item:                                │
+│    filename = sha256(guid or link)               │
+│    if file exists → skip                         │
+│    format RFC 2822 → write to subdir/filename    │
+│                                                  │
+│ 5. Summary to stderr                             │
+└─────────────────────────────────────────────────┘
 ```
 
-Two independent consumers of the same pipeline:
-- `crawler.sh` — standalone, no Lua needed
-- `rss.lua` — for Lua projects in freechains ecosystem
+## Directory Structure
 
-## rss.lua — Lua Module API
-
-```lua
-local rss = require("rss")
-
-local feed, err = rss.get(url)
-local feed, err = rss.parse(json_str)
-```
-
-**Returned table:**
-
-```lua
-{
-    feed = {
-        title  = "Hacker News",
-        link   = "https://news.ycombinator.com",
-    },
-    items = {
-        {
-            title  = "Article Title",
-            link   = "https://example.com/article",
-            guid   = "https://example.com/article-123",
-            date   = "Mon, 03 Mar 2026 14:30:00 +0000",
-            body   = "Plain text description...",
-            author = "someone",
-        },
-    },
-}
-```
-
-- `date` always RFC 2822
-  (Atom ISO 8601 converted)
-- `body` plain text (HTML stripped)
-- `guid` falls back to `link` if absent
-- Defaults:
-  title="(untitled)", date=now, body="", author=feed.title
-
-### Module functions
-
-- `rss.get(url)` — curl + yq + normalize.
-  Returns `feed_table, err`.
-- `rss.parse(json_str)` — json.decode + normalize.
-  Returns `feed_table, err`.
-
-### Internal helpers (exported via `rss._` for testing)
-
-- `detect_feed(t)` — `t.rss` → "rss", `t.feed` → "atom"
-- `normalize_rss(t)` — maps RSS JSON to common table
-- `normalize_atom(t)` — maps Atom JSON to common table
-- `iso_to_rfc2822(iso)` — ISO 8601 to RFC 2822
-- `strip_html(s)` — HTML tag removal
-
-## crawler.sh — Shell Script
+Feed URL → domain/path (scheme and query stripped).
+Dirs contain only item files (sha256 hashes).
 
 ```
-./crawler.sh <url> <output-dir>
+root-dir/
+    www.akitaonrails.com/
+        index.xml/
+            a1b2c3d4...   ← sha256(guid)
+            f7e8d9c0...
+    news.ycombinator.com/
+        rss/
+            c3d4e5f6...
+            d9c0b1a2...
+    lobste.rs/
+        rss/
+            e5f6a1b2...
+    github.blog/
+        all.atom/
+            b3c4d5e6...
+```
+
+### URL → subdir derivation
+
+```
+https://www.akitaonrails.com/index.xml
+  → root-dir/www.akitaonrails.com/index.xml/
+
+https://news.ycombinator.com/rss
+  → root-dir/news.ycombinator.com/rss/
+
+https://lobste.rs/rss
+  → root-dir/lobste.rs/rss/
+```
+
+In shell:
+```sh
+subdir=$(echo "$url" \
+    | sed 's|^https\?://||' \
+    | sed 's|?.*||' \
+    | sed 's|#.*||' \
+    | sed 's|/$||')
+item_dir="$root_dir/$subdir"
+mkdir -p "$item_dir"
+```
+
+## Idempotency — sha256(guid) as filename
+
+No `.seen` file needed.
+The filesystem IS the dedup mechanism.
+
+- **filename** = `sha256(guid)`, 64 hex chars
+- **guid** stored inside the file as `X-RSS-GUID` header
+- **New item**: file doesn't exist → write it
+- **Seen item**: file exists → skip
+- **Edited item**: same guid → same hash → overwrites
+
+### Guid fallback
+
+1. RSS `<guid>` or Atom `<id>` → sha256 it
+2. If missing → use `<link>` → sha256 it
+3. If both missing → skip item
+
+Note: official HN RSS has no `<guid>`.
+Fallback to `<link>` (article URL) works.
+
+### Cron scenario
+
+```
+First run:   dir empty      → all 10 items written
+Second run:  10 files exist → 2 new items written
+Third run:   12 files exist → 0 new, nothing written
+```
+
+## crawler.sh
+
+```
+rss/crawler.sh <root-dir> <url>
 ```
 
 - Single feed per invocation
@@ -128,20 +148,22 @@ local feed, err = rss.parse(json_str)
 ### Algorithm
 
 ```
-1. Parse args (url, output_dir)
-2. mkdir -p output_dir
-3. curl -sL "$url" | yq -o json -p xml > tmp
-4. Detect feed type (jq: .rss or .feed)
-5. Extract items via jq → one JSON object per line
-6. Load .seen (one guid per line)
-7. Find highest MH number (ls | sort -n | tail -1)
+1. Parse args (root_dir, url)
+2. Derive item_dir from url (domain/path)
+3. mkdir -p item_dir
+4. curl -sL "$url" | yq -o json -p xml > tmp
+5. Detect feed type (jq: .rss or .feed)
+6. Extract items via jq → one JSON object per line
+7. count_new=0, count_total=0
 8. For each item:
-   a. guid from jq output
-   b. grep -qF "$guid" .seen → skip if found
-   c. Format RFC 2822 (printf/heredoc)
-   d. Write to output_dir/$next_number
-   e. echo "$guid" >> .seen
-   f. increment number
+   a. id = guid or link (skip if neither)
+   b. filename = sha256(id)
+   c. count_total++
+   d. if file exists → skip
+   e. Extract: title, link, date, body, author
+   f. Format RFC 2822
+   g. Write to item_dir/$filename
+   h. count_new++
 9. Print summary to stderr
 ```
 
@@ -166,96 +188,119 @@ Link: <link>
 - **Success**: `"Feed Title: 3 new, 15 total"`
 - **Error**: `"error: <description>"` + exit 1
 
-## Idempotency
+## Test Feeds
 
-- `.seen` file in `<output-dir>/`, one guid per line
-- Key = guid (fallback: link)
-- Re-running skips seen items
-- MH numbering continues from highest existing file
+| Feed                                    | Format  | guid        | Notes                        |
+|-----------------------------------------|---------|-------------|------------------------------|
+| https://www.akitaonrails.com/index.xml  | RSS 2.0 | URL         | content:encoded, HTML body   |
+| https://news.ycombinator.com/rss        | RSS 2.0 | **missing** | fallback to link, CDATA desc |
+| https://lobste.rs/rss                   | RSS 2.0 | short URL   | author, categories           |
+| https://github.blog/all.atom            | Atom    | tag URI     | Atom path (entries, not items)|
+
+Saved as XML fixtures in `rss/tst/fixtures/` for offline
+testing.
 
 ## Edge Cases
 
-| Case                      | Handling                       |
-|---------------------------|--------------------------------|
-| No guid                   | Use link as guid               |
-| No link AND no guid       | sha256(title+date) as guid     |
-| No title                  | "(untitled)"                   |
-| No date                   | Current time in RFC 2822       |
-| No body                   | Empty string                   |
-| HTML in description       | Stripped to plain text          |
-| First run (.seen missing) | Treated as empty               |
-| Feed has 0 items          | Exit 0, no files written       |
-| Network/parse error       | stderr message, exit 1         |
-| yq/jq not found           | stderr message, exit 1         |
-| Single item (not array)   | jq wraps in array              |
+| Case                     | Handling                  |
+|--------------------------|---------------------------|
+| No guid                  | sha256(link) as filename  |
+| No guid AND no link      | Skip item                 |
+| No title                 | "(untitled)"              |
+| No date                  | Current time in RFC 2822  |
+| No body                  | Empty string              |
+| HTML in description      | Stripped to plain text     |
+| Feed has 0 items         | Exit 0, no files written  |
+| Network/parse error      | stderr message, exit 1    |
+| yq/jq not found          | stderr message, exit 1    |
+| Single item (not array)  | jq wraps in array         |
 
 ## Sample Crontab
 
 ```crontab
-# Fetch HN newest every 15 minutes
-*/15 * * * * /x/freechains/crawlers/crawler.sh \
-    "https://hnrss.org/newest?count=30" \
-    /home/chico/mail/hn \
-    2>> /home/chico/log/rss-hn.log
+# Fetch Akita on Rails every hour
+0 * * * * /x/freechains/crawlers/rss/crawler.sh \
+    /home/chico/feeds \
+    "https://www.akitaonrails.com/index.xml" \
+    2>> /home/chico/log/rss.log
 
-# Fetch Go Blog daily at 6am
-0 6 * * * /x/freechains/crawlers/crawler.sh \
-    "https://go.dev/blog/feed.atom" \
-    /home/chico/mail/goblog \
-    2>> /home/chico/log/rss-goblog.log
+# Fetch HN front page every 15 minutes
+*/15 * * * * /x/freechains/crawlers/rss/crawler.sh \
+    /home/chico/feeds \
+    "https://news.ycombinator.com/rss" \
+    2>> /home/chico/log/rss.log
+
+# Fetch Lobsters every 30 minutes
+*/30 * * * * /x/freechains/crawlers/rss/crawler.sh \
+    /home/chico/feeds \
+    "https://lobste.rs/rss" \
+    2>> /home/chico/log/rss.log
+
+# Fetch GitHub Blog every 2 hours
+0 */2 * * * /x/freechains/crawlers/rss/crawler.sh \
+    /home/chico/feeds \
+    "https://github.blog/all.atom" \
+    2>> /home/chico/log/rss.log
+```
+
+Result:
+```
+/home/chico/feeds/
+    www.akitaonrails.com/index.xml/...
+    news.ycombinator.com/rss/...
+    lobste.rs/rss/...
+    github.blog/all.atom/...
 ```
 
 ## Incremental Implementation (test-first)
 
-### rss.lua tests — `tst/rss.lua`
+Shell tests with assert-like checks.
+XML fixtures for offline testing.
+Run: `cd rss && bash tst/runner.sh`
 
-Plain `assert()` tests, no framework.
-Hardcoded JSON strings (yq output shape), no network.
-Run: `lua tst/rss.lua`
-
-| Step | Test                                       | Implement       |
-|------|--------------------------------------------|-----------------|
-| 1.1  | strip_html: remove tags, collapse spaces   | strip_html      |
-| 1.2  | iso_to_rfc2822: basic ISO 8601             | iso_to_rfc2822  |
-| 1.3  | iso_to_rfc2822: with timezone offset       | (extend)        |
-| 2.1  | detect_feed: {rss=...} → "rss"            | detect_feed     |
-| 2.2  | detect_feed: {feed=...} → "atom"          | (same)          |
-| 2.3  | detect_feed: {} → nil, error              | (same)          |
-| 3.1  | RSS JSON: 1 item, all fields              | normalize_rss   |
-| 3.2  | RSS: missing guid → link fallback         | (edge case)     |
-| 3.3  | RSS: missing title → "(untitled)"         | (edge case)     |
-| 3.4  | RSS: missing description → body=""        | (edge case)     |
-| 3.5  | RSS: single item (object not array)       | (edge case)     |
-| 3.6  | RSS: multiple items → count + order       | (edge case)     |
-| 3.7  | RSS: HTML in description → stripped       | (edge case)     |
-| 4.1  | Atom JSON: 1 entry, all fields            | normalize_atom  |
-| 4.2  | Atom: link as object vs array             | (edge case)     |
-| 4.3  | Atom: content preferred over summary      | (edge case)     |
-| 4.4  | Atom: ISO date → RFC 2822                | (uses helper)   |
-| 4.5  | Atom: missing id → link fallback          | (edge case)     |
-| 5.1  | rss.parse: RSS JSON string → table        | rss.parse       |
-| 5.2  | rss.parse: Atom JSON string → table       | (same)          |
-| 5.3  | rss.parse: garbage → nil, error           | (same)          |
-
-### crawler.sh — after rss.lua tests pass
-
-Tested manually with real feeds.
+| Step | Test                                     | Implement         |
+|------|------------------------------------------|-------------------|
+| 1.1  | URL → subdir: strip scheme/query         | subdir derivation |
+| 1.2  | URL → subdir: various URL formats        | (edge cases)      |
+| 2.1  | yq: akita.xml → valid JSON               | fetch + convert   |
+| 2.2  | yq: hn.xml → valid JSON                  | (same)            |
+| 2.3  | yq: lobster.xml → valid JSON             | (same)            |
+| 2.4  | yq: github.xml → valid JSON              | (same)            |
+| 3.1  | jq: detect RSS feed type                 | detect logic      |
+| 3.2  | jq: detect Atom feed type                | (same)            |
+| 4.1  | jq: extract akita items (all fields)     | extract jq filter |
+| 4.2  | jq: extract HN items (no guid)           | (guid fallback)   |
+| 4.3  | jq: extract lobster items                | (same filter)     |
+| 4.4  | jq: extract GitHub Blog Atom entries     | Atom extract      |
+| 4.5  | jq: single item wrapped as array         | (edge case)       |
+| 5.1  | sha256: deterministic filename from guid | sha256 func       |
+| 5.2  | dedup: first run, all items new          | file-exists check |
+| 5.3  | dedup: second run, no new items          | (same)            |
+| 6.1  | RFC 2822: valid message format           | format logic      |
+| 6.2  | RFC 2822: HTML stripped from body        | (same)            |
+| 7.1  | Full pipeline: akita end-to-end          | integration       |
+| 7.2  | Full pipeline: HN end-to-end             | integration       |
+| 7.3  | Full pipeline: lobster end-to-end        | integration       |
+| 7.4  | Full pipeline: GitHub Blog end-to-end    | integration       |
 
 ## Verification
 
-1. `lua tst/rss.lua` → all tests pass
-2. `./crawler.sh <url> <dir>` → manual test
+1. `cd rss && bash tst/runner.sh` → all tests pass
+2. `rss/crawler.sh /tmp/feeds <url>` → manual test
 3. Re-run same command → "0 new" (idempotency)
 
 ## Progress
 
 - [ ] Install yq
-- [ ] Steps 1.1–1.3: Helpers (test + implement)
-- [ ] Steps 2.1–2.3: Feed detection (test + implement)
-- [ ] Steps 3.1–3.7: RSS normalization (test + implement)
-- [ ] Steps 4.1–4.5: Atom normalization (test + implement)
-- [ ] Steps 5.1–5.3: Public API (test + implement)
-- [ ] crawler.sh
+- [ ] Save XML fixtures (akita, hn, lobster, github)
+- [ ] Steps 1: URL → subdir
+- [ ] Steps 2: yq XML→JSON
+- [ ] Steps 3: Detect feed type
+- [ ] Steps 4: Extract items (jq filters)
+- [ ] Steps 5: sha256 + dedup
+- [ ] Steps 6: RFC 2822 formatting
+- [ ] Steps 7: Integration tests
+- [ ] crawler.sh complete
 - [ ] Update README.md
 - [ ] Manual testing
 - [ ] CI/CD integration

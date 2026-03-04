@@ -1,0 +1,2630 @@
+<?xml version="1.0" encoding="UTF-8"?><feed
+	xmlns="http://www.w3.org/2005/Atom"
+	xmlns:thr="http://purl.org/syndication/thread/1.0"
+	xml:lang="en-US"
+	>
+	<title type="text">The GitHub Blog</title>
+	<subtitle type="text">Updates, ideas, and inspiration from GitHub to help developers build and design software.</subtitle>
+
+	<updated>2026-03-03T22:56:31Z</updated>
+
+	<link rel="alternate" type="text/html" href="https://github.blog/" />
+	<id>https://github.blog/feed/atom/</id>
+	<link rel="self" type="application/atom+xml" href="https://github.blog/all.atom" />
+
+	<generator uri="https://wordpress.org/" version="6.9.1">WordPress</generator>
+<icon>https://github.blog/wp-content/uploads/2019/01/cropped-github-favicon-512.png?fit=32%2C32</icon>
+	<entry>
+		<author>
+			<name>David Tippett</name>
+					</author>
+
+		<title type="html"><![CDATA[How we rebuilt the search architecture for high availability in GitHub Enterprise Server]]></title>
+		<link rel="alternate" type="text/html" href="https://github.blog/engineering/architecture-optimization/how-we-rebuilt-the-search-architecture-for-high-availability-in-github-enterprise-server/" />
+
+		<id>https://github.blog/?p=94225</id>
+		<updated>2026-03-03T18:45:12Z</updated>
+		<published>2026-03-03T18:45:09Z</published>
+		<category scheme="https://github.blog/" term="Architecture &amp; optimization" /><category scheme="https://github.blog/" term="Engineering" /><category scheme="https://github.blog/" term="GitHub Enterprise Server" /><category scheme="https://github.blog/" term="search engineering" />
+		<summary type="html"><![CDATA[<p>Here's how we the search experience better, faster, and more resilient for GHES customers.</p>
+<p>The post <a href="https://github.blog/engineering/architecture-optimization/how-we-rebuilt-the-search-architecture-for-high-availability-in-github-enterprise-server/">How we rebuilt the search architecture for high availability in GitHub Enterprise Server</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></summary>
+
+					<content type="html" xml:base="https://github.blog/engineering/architecture-optimization/how-we-rebuilt-the-search-architecture-for-high-availability-in-github-enterprise-server/"><![CDATA[<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><p>So much of what you interact with on GitHub depends on search&mdash;obviously the search bars and filtering experiences like the GitHub Issues page, but it is also the core of the releases page, projects page, the counts for issues and pull requests, and more. Given that search is such a core part of the GitHub platform, we&rsquo;ve spent the last year making it even more durable. That means, less time spent managing GitHub Enterprise Server, and more time working on what your customers care most about.&nbsp;</p>
+
+
+
+<p>In recent years, GitHub Enterprise Server administrators had to be especially careful with search indexes, the special database tables optimized for searching. If they didn&rsquo;t follow maintenance or upgrade steps in exactly the right order, search indexes could become damaged and need repair, or they might get locked and cause problems during upgrades. Quick context if you&rsquo;re not running High Availability (HA) setups, they&rsquo;re designed to keep GitHub Enterprise Server running smoothly even if part of the system fails. You have a primary node that handles all the writes and traffic, and replica nodes that stay in sync and can take over if needed.</p>
+
+
+
+<figure class="wp-block-image size-full"><img data-recalc-dims="1" fetchpriority="high" decoding="async" width="1280" height="720" src="https://github.blog/wp-content/uploads/2026/03/CCR.png?resize=1280%2C720" alt="Diagram labeled 'HA Architecture' with two boxes: 'Primary Node' and 'Replica Node.' Across both of them there exists an 'Elasticsearch Cluster' with a nested box on each node labeled 'ES Instance.' A pink arrow points from the Primary Node&rsquo;s ES Instance to the Replica Node&rsquo;s ES Instance, indicating replication or failover in a high-availability setup." class="wp-image-94226" srcset="https://github.blog/wp-content/uploads/2026/03/CCR.png?w=1280 1280w, https://github.blog/wp-content/uploads/2026/03/CCR.png?w=300 300w, https://github.blog/wp-content/uploads/2026/03/CCR.png?w=768 768w, https://github.blog/wp-content/uploads/2026/03/CCR.png?w=1024 1024w" sizes="(max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<p>Much of this difficulty comes from how previous versions of Elasticsearch, our search database of choice, were integrated. HA GitHub Enterprise Server installations use a leader/follower pattern. The leader (primary server) receives all the writes, updates, and traffic. Followers (replicas) are designed to be read-only. This pattern is deeply ingrained into all of the operations of GitHub Enterprise Server.<br><br>This is where Elasticsearch started running into issues. Since it couldn&rsquo;t support having a primary node and a replica node, GitHub engineering had to create an Elasticsearch cluster across the primary and replica nodes. This made replicating data straightforward and additionally gave some performance benefits, since each node could locally handle search requests.&nbsp;</p>
+
+
+
+<figure class="wp-block-image size-full"><img data-recalc-dims="1" decoding="async" width="1280" height="720" src="https://github.blog/wp-content/uploads/2026/03/CCR-1.png?resize=1280%2C720" alt="Diagram showing 'Primary Node' and 'Replica Node' as part of an 'Elasticsearch Cluster.' The Primary Node contains 'Primary Shard 1,' and the Replica Node contains 'Primary Shard 2.' A pink arrow points from an empty shard slot on the 'Primary Node' to Shard 2, representing the unwanted move of a primary shard to the 'Replica Node.'" class="wp-image-94227" srcset="https://github.blog/wp-content/uploads/2026/03/CCR-1.png?w=1280 1280w, https://github.blog/wp-content/uploads/2026/03/CCR-1.png?w=300 300w, https://github.blog/wp-content/uploads/2026/03/CCR-1.png?w=768 768w, https://github.blog/wp-content/uploads/2026/03/CCR-1.png?w=1024 1024w" sizes="(max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<p>Unfortunately, the problems of clustering across servers eventually began to outweigh the benefits. For example, at any point Elasticsearch could move a primary shard (responsible for receiving/validating writes) to a replica. If that replica was then taken down for maintenance, GitHub Enterprise Server could end up in a locked state. The replica would wait for Elasticsearch to be healthy before starting up, but Elasticsearch couldn&rsquo;t become healthy until the replica rejoined.<br></p>
+
+
+
+<p>For a number of GitHub Enterprise Server releases, engineers at GitHub tried to make this mode more stable. We implemented checks to ensure Elasticsearch was in a healthy state, as well as other processes to try and correct drifting states. We went as far as attempting to build a &ldquo;search mirroring&rdquo; system that would allow us to move away from the clustered mode. But database replication is incredibly challenging and these efforts needed consistency.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-what-changed">What changed?</h2>
+
+
+
+<p>After years of work, we&rsquo;re now able to use Elasticsearch&rsquo;s Cross Cluster Replication (CCR) feature to support HA GitHub Enterprise.&nbsp;</p>
+
+
+
+<p>&ldquo;But David,&rdquo; you say, &ldquo;That&rsquo;s replication between clusters. How does that help here?&rdquo;&nbsp;</p>
+
+
+
+<p>I&rsquo;m so glad you asked. With this mode, we&rsquo;re moving to use several, &ldquo;single-node&rdquo; Elasticsearch clusters. Now each Enterprise server instance will operate as independent single node Elasticsearch clusters.</p>
+
+
+
+<figure class="wp-block-image size-full"><img data-recalc-dims="1" decoding="async" width="1280" height="720" src="https://github.blog/wp-content/uploads/2026/03/CCR-2.png?resize=1280%2C720" alt="Diagram showing two boxes labeled 'Primary Node' and 'Replica Node.' Each box contains a dashed rectangle labeled 'Elasticsearch Instance / Cluster.' A double-headed pink arrow labeled 'Replicate Index Data (CCR)' connects the two boxes, illustrating bidirectional data replication between the primary and replica Elasticsearch clusters." class="wp-image-94228" srcset="https://github.blog/wp-content/uploads/2026/03/CCR-2.png?w=1280 1280w, https://github.blog/wp-content/uploads/2026/03/CCR-2.png?w=300 300w, https://github.blog/wp-content/uploads/2026/03/CCR-2.png?w=768 768w, https://github.blog/wp-content/uploads/2026/03/CCR-2.png?w=1024 1024w" sizes="(max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<p>CCR lets us share the index data between nodes in a way that is carefully controlled and natively supported by Elasticsearch. It copies data once it&rsquo;s been persisted to the Lucene segments (Elasticsearch&rsquo;s underlying data store). This ensures we&rsquo;re replicating data that has been durably persisted within the Elasticsearch cluster.<br></p>
+
+
+
+<p>In other words, now that Elasticsearch supports a leader/follower pattern, GitHub Enterprise Server administrators will no longer be left in a state where critical data winds up on read-only nodes.</p>
+
+
+
+<h2 class="wp-block-heading" id="under-the-hood">Under the hood</h2>
+
+
+
+<p>Elasticsearch has an auto-follow API, but it only applies to indexes created <em>after</em> the policy exists. GitHub Enterprise Server HA installations already have a long-lived set of indexes, so we need a bootstrap step that attaches followers to existing indexes, then enables auto-follow for anything created in the future.<br><br>Here&rsquo;s a sample of what that workflow looks like:</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>function bootstrap_ccr(primary, replica):
+  # Fetch the current indexes on each 
+  primary_indexes = list_indexes(primary)
+  replica_indexes = list_indexes(replica)
+
+  # Filter out the system indexes
+  managed = filter(primary_indexes, is_managed_ghe_index)
+  
+  # For indexes without follower patterns we need to
+  #   initialize that contract
+  for index in managed:
+    if index not in replica_indexes:
+      ensure_follower_index(replica, leader=primary, index=index)
+    else:
+      ensure_following(replica, leader=primary, index=index)
+
+  # Finally we will setup auto-follower patterns 
+  #   so new indexes are automatically followed
+  ensure_auto_follow_policy(
+    replica,
+    leader=primary,
+    patterns=[managed_index_patterns],
+    exclude=[system_index_patterns]
+  )</code></pre>
+
+
+
+<p>This is just one of the new workflows we&rsquo;ve created to enable CCR in GitHub Enterprise Server. We&rsquo;ve needed to engineer custom workflows for failover, index deletion, and upgrades. Elasticsearch only handles the document replication, and we&rsquo;re responsible for the rest of the index&rsquo;s lifecycle.&nbsp;</p>
+
+
+
+<h2 class="wp-block-heading" id="h-how-to-get-started-with-ccr-mode">How to get started with CCR mode&nbsp;</h2>
+
+
+
+<p>To get started using the new CCR mode, reach out to <a href="mailto:support@github.com">support@github.com</a> and let them know you&rsquo;d like to use the new HA mode for GitHub Enterprise Server. They&rsquo;ll set up your organization so that you can download the required license.<br><br>Once you&rsquo;ve downloaded your new license, you&rsquo;ll need to set `ghe-config app.elasticsearch.ccr true`. With that finished, administrators can run a `config-apply` or an upgrade on your cluster to move to 3.19.1, which is the first release to support this new architecture.&nbsp;&nbsp;</p>
+
+
+
+<p>When your GitHub Enterprise Server restarts, Elasticsearch will migrate your installation to use the new replication method. This will consolidate all the data onto the primary nodes, break clustering across nodes, and restart replication using CCR. This update may take some time depending on the size of your GitHub Enterprise Server instance.<br><br>While the new HA method is optional for now, we&rsquo;ll be making it our default over the next two years. We want to ensure there&rsquo;s ample time for GitHub Enterprise administrators to get their feedback in, so now is the time to try it out.&nbsp;</p>
+
+
+
+<p>We&rsquo;re excited for you to start using the new HA mode for a more seamless experience managing GitHub Enterprise Server.&nbsp;</p>
+
+
+
+<div class="wp-block-group post-content-cta has-global-padding is-layout-constrained wp-block-group-is-layout-constrained">
+<p>Want to get the most out of search on your High Availability GitHub Enterprise Server deployment? <a href="mailto:support@github.com">Reach out to support</a> to get set up with our new search architecture!</p>
+</div>
+</body></html>
+<p>The post <a href="https://github.blog/engineering/architecture-optimization/how-we-rebuilt-the-search-architecture-for-high-availability-in-github-enterprise-server/">How we rebuilt the search architecture for high availability in GitHub Enterprise Server</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></content>
+		
+			</entry>
+		<entry>
+		<author>
+			<name>Kathleen Ann Savage</name>
+					</author>
+
+		<title type="html"><![CDATA[Join or host a GitHub Copilot Dev Days event near you]]></title>
+		<link rel="alternate" type="text/html" href="https://github.blog/ai-and-ml/github-copilot/join-or-host-a-github-copilot-dev-days-event-near-you/" />
+
+		<id>https://github.blog/?p=94244</id>
+		<updated>2026-03-03T22:56:31Z</updated>
+		<published>2026-03-03T16:55:00Z</published>
+		<category scheme="https://github.blog/" term="AI &amp; ML" /><category scheme="https://github.blog/" term="GitHub Copilot" />
+		<summary type="html"><![CDATA[<p>GitHub Copilot Dev Days is a global series of hands-on, in-person, community-led events designed to help developers explore real-world, AI-assisted coding.  </p>
+<p>The post <a href="https://github.blog/ai-and-ml/github-copilot/join-or-host-a-github-copilot-dev-days-event-near-you/">Join or host a GitHub Copilot Dev Days event near you</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></summary>
+
+					<content type="html" xml:base="https://github.blog/ai-and-ml/github-copilot/join-or-host-a-github-copilot-dev-days-event-near-you/"><![CDATA[<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><p>The way we build software is changing fast. AI is no longer a &ldquo;someday&rdquo; tool. It&rsquo;s reshaping how we plan, write, review, and ship code right now. As products evolve faster than ever, developers are expected to keep up just as quickly. That&rsquo;s why GitHub Copilot Dev Days exists: for developers to level up together on how they can use AI-assisted coding today.</p>
+
+
+
+<p><a href="https://aka.ms/githubcopilotdevdays">GitHub Copilot Dev Days</a> is a global series of hands-on, in-person, community-led events designed to help developers explore real-world AI-assisted coding with <a href="http://github.com/features/copilot">GitHub Copilot</a>. Join us for the knowledge, stay for the great food, good vibes, and plenty of fun along the way. <a href="https://aka.ms/githubcopilotdevdays">Find an event</a> near you and register today.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-who-is-github-copilot-dev-days-for">Who is GitHub Copilot Dev Days for?</h2>
+
+
+
+<p>Anyone and everyone who is looking to improve their development workflow and learn something new! We have events run by and for folks from professional developers to students. Sessions cover various levels and programming backgrounds.</p>
+
+
+
+<p>If it&rsquo;s your first time trying out AI-assisted development, this event will introduce you to the tools and best practices to succeed from day one. If you&rsquo;re more advanced, we&rsquo;re excited to show you the latest tips and tricks to ensure you&rsquo;re fully up to date.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-what-to-expect-from-a-github-copilot-dev-day">What to expect from a GitHub Copilot Dev Day</h2>
+
+
+
+<p>Each event will feature live demos, practical sessions, and interactive workshops with high-quality training content. We will focus on real workflows you can use right away, whether you&rsquo;re already using Copilot daily or just getting started. Your hosts are development experts: GitHub Stars, Microsoft MVPs, GitHub Campus Experts, Microsoft Student Ambassadors, GitHub and Microsoft employees, to name a few.</p>
+
+
+
+<p>We will have training materials covering the <strong>GitHub Copilot CLI, Cloud Agent, GitHub Copilot in VS Code, Visual Studio, </strong>and<strong> other editors</strong>, and more! Different events will focus on different topics, so be sure to review the registration page beforehand.</p>
+
+
+
+<p>The specific event details will vary, as each community event organizer might tweak the event to fit the interests of their local developer community. Here is a sample agenda:</p>
+
+
+
+<ul class="wp-block-list">
+<li><strong>Introductory session</strong>: 30-45 minutes on GitHub Copilot.</li>
+
+
+
+<li><strong>Local community session</strong>: 30-45 minutes by a local developer or community leader on relevant topics.</li>
+
+
+
+<li><strong>Hands-on workshop</strong>: 1 hour of coding and practical exercises.</li>
+</ul>
+
+
+
+<p>All events are an opportunity to connect with your local developer community, learn something new, and enjoy some snacks and swag!</p>
+
+
+
+<h2 class="wp-block-heading" id="h-events-begin-in-march">Events begin in March</h2>
+
+
+
+<p><a href="https://aka.ms/githubcopilotdevdays">Events are now live in cities around the world</a> starting in March. Spots are limited and dates are approaching&mdash;now&rsquo;s the time to grab a seat.</p>
+
+
+
+<p>Want to bring GitHub Copilot Dev Days to your user group? <a href="https://aka.ms/githubcopilotdevdays/form">Fill out our form</a>.</p>
+
+
+
+<div class="wp-block-group post-content-cta has-global-padding is-layout-constrained wp-block-group-is-layout-constrained">
+<p><a href="https://aka.ms/githubcopilotdevdays" target="_blank" rel="noreferrer noopener">Find a GitHub Copilot Dev Days event near you and register today &gt;</a></p>
+</div>
+</body></html>
+<p>The post <a href="https://github.blog/ai-and-ml/github-copilot/join-or-host-a-github-copilot-dev-days-event-near-you/">Join or host a GitHub Copilot Dev Days event near you</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></content>
+		
+			</entry>
+		<entry>
+		<author>
+			<name>Kedasha Kerr</name>
+					</author>
+
+		<title type="html"><![CDATA[GitHub for Beginners: Getting started with GitHub Issues and Projects]]></title>
+		<link rel="alternate" type="text/html" href="https://github.blog/developer-skills/github/github-for-beginners-getting-started-with-github-issues-and-projects/" />
+
+		<id>https://github.blog/?p=94193</id>
+		<updated>2026-03-02T21:17:43Z</updated>
+		<published>2026-03-02T17:00:00Z</published>
+		<category scheme="https://github.blog/" term="Developer skills" /><category scheme="https://github.blog/" term="GitHub" /><category scheme="https://github.blog/" term="developer skills" /><category scheme="https://github.blog/" term="GitHub for beginners" />
+		<summary type="html"><![CDATA[<p>Learn how to get organized and collaborate more efficiently with this step-by-step tutorial.</p>
+<p>The post <a href="https://github.blog/developer-skills/github/github-for-beginners-getting-started-with-github-issues-and-projects/">GitHub for Beginners: Getting started with GitHub Issues and Projects</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></summary>
+
+					<content type="html" xml:base="https://github.blog/developer-skills/github/github-for-beginners-getting-started-with-github-issues-and-projects/"><![CDATA[<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><p>Welcome back to GitHub for Beginners, our series designed to help you navigate GitHub like a pro and get the most out of it! We&rsquo;re bringing you a double dose by sharing these episodes in <a href="https://youtu.be/c67GaAkf1BE">video format</a> and adding them to <a href="https://github.blog/tag/github-for-beginners/">our blog</a>, so you can consume the material in whichever form works better for you!</p>
+
+
+
+<p>We&rsquo;re now entering our third season! In the previous seasons, we focused on a general introduction to all things Git and then spent an entire season talking about Copilot. This season, we&rsquo;re going back to the basics and exploring the core features of GitHub. Our goal is to help you level up&mdash;or dust off&mdash;your GitHub skills.</p>
+
+
+
+<p>In this episode, we&rsquo;re going to start with two of GitHub&rsquo;s most powerful collaboration tools: GitHub Issues and Projects. By the end of this post, you&rsquo;ll know how to create an issue, how to sync your issues to a GitHub Project board, and how to use GitHub Projects to track your work.</p>
+
+
+
+<p>Let&rsquo;s get into it! Or, watch the full video above!</p>
+
+
+
+<h2 class="wp-block-heading" id="h-why-issues-and-projects-matter">Why issues and projects matter</h2>
+
+
+
+<p>GitHub Issues and Projects are essential tools for any team that wants to stay organized and collaborate efficiently. Issues help you track tasks, bugs, and ideas, all in a clear shared space&mdash;ensuring nothing slips through the cracks. Projects look at the bigger picture, letting you visualize, prioritize, and plan your work, turning individual issues into an actionable workflow that everyone can follow.</p>
+
+
+
+<p>By combing issues and projects, you can coordinate work, communicate progress, and ensure that everyone&rsquo;s aligned toward the same goal.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-creating-your-first-github-issue">Creating your first GitHub Issue</h2>
+
+
+
+<p>GitHub Issues are a simple way to capture anything that needs attention in your project, whether that&rsquo;s a new idea, a bug, or a task. Think of them as the building blocks of what you want to add to or update in your project. They help teams work collaboratively and stay organized, while making sure that every item is addressed.</p>
+
+
+
+<p>So how do you create an issue? Here&rsquo;s a sample repository where you can try this out for yourself by following these steps.</p>
+
+
+
+<ol start="1" class="wp-block-list">
+<li>Navigate to&nbsp;<a href="https://github.com/github-samples/gitfolio?utm_source=blog-episode-1&amp;utm_medium=blog&amp;utm_campaign=gfb-s3-2026" target="_blank" rel="noreferrer noopener">gh.io/gfb-issues</a>&nbsp;in your browser.&nbsp;</li>
+
+
+
+<li>At the top of the&nbsp;page, click the&nbsp;<strong>Issues</strong>&nbsp;tab.&nbsp;</li>
+
+
+
+<li>In the top-right of the&nbsp;window, click the green&nbsp;<strong>New&nbsp;issue</strong>&nbsp;button.&nbsp;</li>
+
+
+
+<li>A window will appear with a couple of boxes. First, give your issue a clear title by entering it in the box under &ldquo;Add a title.&rdquo;&nbsp;</li>
+
+
+
+<li>Provide a description for your issue in the &ldquo;Add a description&rdquo; box.&nbsp;Your description should include&nbsp;all of&nbsp;the relevant information necessary to&nbsp;set&nbsp;expectations.&nbsp;When someone&nbsp;attempts&nbsp;to resolve this issue, what is the behavior they should add or fix?&nbsp;</li>
+
+
+
+<li>On the right-hand side of the window, you have several options that you can configure.&nbsp;&nbsp;
+<ul class="wp-block-list">
+<li><strong>Assignee</strong>: Assign someone to work on this issue directly. You can even assign yourself to show what&nbsp;you&rsquo;re&nbsp;working on.&nbsp;</li>
+
+
+
+<li><strong>Labels</strong>: Classify your issue into one of several predesigned categories or potentially add a new one.&nbsp;</li>
+
+
+
+<li><strong>Type</strong>:&nbsp;Indicate&nbsp;whether your issue&nbsp;is&nbsp;about&nbsp;something like a bug or a task.&nbsp;</li>
+
+
+
+<li><strong>Projects</strong>: Add your issue to projects, which&nbsp;we&rsquo;ll&nbsp;be covering later in this&nbsp;post.&nbsp;</li>
+
+
+
+<li><strong>Milestone</strong>: Assign your issue to a specific milestone.&nbsp;</li>
+</ul>
+</li>
+
+
+
+<li>Click the green&nbsp;<strong>Create&nbsp;</strong>button&nbsp;below&nbsp;the issue description.&nbsp;</li>
+</ol>
+
+
+
+<p>Congratulations! You have just created your first issue! Once an issue is created, anyone on the team can jump in and comment. All they need to do is enter some text in the comment field and then click the Comment button. You can even link issues together by typing <code>#</code> and then the number of the issue in the comment field. GitHub will automatically provide a clickable link to the numbered issue. This is super handy for tracking related work.</p>
+
+
+
+<p>And when the work is finished, you can close the issue, letting the entire team know that it&rsquo;s been addressed.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-creating-your-first-github-project">Creating your first GitHub Project</h2>
+
+
+
+<p>Projects give you a way to group GitHub Issues together in a visual dashboard that&rsquo;s perfect for planning, organizing, and tracking work. It&rsquo;s a tool for breaking big goals down into manageable tasks that you can track all in one place.</p>
+
+
+
+<p>Now let&rsquo;s walk through creating a project board. Here&rsquo;s a sample repository where you can try this out, or you can do it in your own repository. If you still have the repository open from the walkthrough above, you can skip the first step.</p>
+
+
+
+<ol class="wp-block-list">
+<li>Navigate to <a href="https://github.com/github-samples/gitfolio?utm_source=blog-episode-1&amp;utm_medium=blog&amp;utm_campaign=gfb-s3-2026" target="_blank" rel="noreferrer noopener">gh.io/gfb-issues</a> in your browser.</li>
+
+
+
+<li>At the top of the page, click the Projects tab.</li>
+
+
+
+<li>In the top-right of the window, click the green New project button.</li>
+
+
+
+<li>A window will pop up providing several templates for you to start from. Select the Kanban template.</li>
+
+
+
+<li>Enter a title in the &ldquo;Project name&rdquo; field.</li>
+
+
+
+<li>Unselect the checkbox for Bulk import items.</li>
+
+
+
+<li>At the bottom of the window, select Create project.</li>
+</ol>
+
+
+
+<p>GitHub will now create the project for you and take you to the project view. You&rsquo;ll see the name of your project at the top of the window. In addition, GitHub automatically created columns for you, but you can customize them however you want.</p>
+
+
+
+<p>Notice that underneath your project&rsquo;s name, there are several tabs. These correspond to different views of the project board. Feel free to click on them to see what the different views look like in your project.</p>
+
+
+
+<p>To manage your project board, click the three dots in the top-right corner and select Settings. This opens a new page where you can:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Manage who has access to your project board.</li>
+
+
+
+<li>Create custom fields.</li>
+
+
+
+<li>Update any current fields.</li>
+
+
+
+<li>Change your project name.</li>
+
+
+
+<li>Provide or change the project description.</li>
+
+
+
+<li>Include a README.</li>
+
+
+
+<li>Create a copy of your project board.</li>
+
+
+
+<li>Change the visibility of your project.</li>
+</ul>
+
+
+
+<h3 class="wp-block-heading" id="h-to-customize-charts">To customize charts</h3>
+
+
+
+<p>At the top of the window, select the Insights button. On the following page, you&rsquo;ll be able to view, create, and customize charts. You can change the layout of any of your charts by clicking the Configure button and choosing options from the dropdown menus.</p>
+
+
+
+<h3 class="wp-block-heading" id="h-to-check-the-status-of-workflows">To check the status of workflows</h3>
+
+
+
+<p>Going back to the main window, you can see a Workflows button next to the Insights button on the top. Select the Workflows button. Now you can see several built-in workflows on the left side of the window that you can use to update the status of items based on certain events. For example, you can automatically set the status to <code>todo</code> when an item is added to your project, close issues when the issue&rsquo;s status in your project is changed or set the status to <code>Done</code> when an issue is closed.</p>
+
+
+
+<h3 class="wp-block-heading" id="h-to-add-a-status-update">To add a status update</h3>
+
+
+
+<p>Going back to the main project view once again, select the Add status update button at the very top. This opens a window where you can add a status report of your project&rsquo;s health and progress.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-connecting-issues-and-projects">Connecting issues and projects</h2>
+
+
+
+<p>Combining issues and projects together is how you&rsquo;re able to get a complete view of your work. Think of issues as individual tasks, and projects as the dashboard that organizes those tasks. When you link issues to a project board, you can visualize where everything stands at a glance.</p>
+
+
+
+<p>Go ahead and open your project board if it isn&rsquo;t open already. At the bottom of the window, select <strong>Add item</strong>. You can either create a new issue right here, or you could search for existing ones. Click the plus icon and select <strong>Add item from repository</strong>. Select the issue or issues that you want to add to this project board. You can use the checkbox at the top of the list to automatically select all items at once if you want to add them all.</p>
+
+
+
+<p>Once you&rsquo;ve selected the issues you want to add, press the Add elected items button at the bottom of the window. Notice how this adds all of the selected issues to your project board as cards. You can select the cards and move them between status columns as work progresses. You can also click on the issue to see the full details of the issue.</p>
+
+
+
+<p>And here&rsquo;s something cool. The issue and your project board are now synchronized. When you change the status of the issue in one, it will automatically be reflected in the other. You can move multiple issues at once, organizing them into columns that match your workflow, and get that satisfying feeling when you finally move them into the &ldquo;Done&rdquo; column.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-end-to-end-flow">End-to-end flow</h2>
+
+
+
+<p>Let&rsquo;s now simulate a real workflow that you might use in your team project by going through the following steps.</p>
+
+
+
+<ol class="wp-block-list">
+<li>Navigate to your project board if you are not already there.</li>
+
+
+
+<li>Click <strong>Add item</strong> at the bottom of your first column, indicating that you are adding a new issue to your workflow.</li>
+
+
+
+<li>Click the plus icon and select <strong>Create new issue</strong> from the context menu.</li>
+
+
+
+<li>Enter a title and description for the issue, describing a new feature you want to add.</li>
+
+
+
+<li>Select <strong>Create</strong> to create the issue and automatically add it to the project board.</li>
+
+
+
+<li>Underneath the description, select <strong>Labels</strong> and select <strong>enhancement</strong> from the list of options.</li>
+
+
+
+<li>Click the issue in the project board to open it.</li>
+
+
+
+<li>In the right-hand column, click the gear next to &ldquo;Assignees&rdquo; to assign this issue to someone on your team.</li>
+
+
+
+<li>Add comments to the issue to signify making progress or providing updates.</li>
+
+
+
+<li>Now let&rsquo;s say that some work was done to address this issue. Open a pull request, and in the comment field, mention that it closes the relevant issue. Do this by entering <code>Closes #</code> and then the number connected with the issue in the pull request description. This will automatically connect to the issue and provide a link to it for ease of reference.</li>
+
+
+
+<li>Merge the pull request, and it will automatically close the issue.</li>
+</ol>
+
+
+
+<p>This workflow keeps everyone aligned without the need for constant status meetings. Everything you need to know is there, both in the issue and on the project board!</p>
+
+
+
+<h2 class="wp-block-heading" id="h-what-s-next">What&rsquo;s next?</h2>
+
+
+
+<p>Now you know how to use GitHub Issues and Projects to organize your work with GitHub. Start simple with a few issues, build out your project board as you go, and you&rsquo;ll have a system that scales with your team.</p>
+
+
+
+<p>If you want to learn even more about <a href="https://docs.github.com/issues/tracking-your-work-with-issues/learning-about-issues/about-issues?utm_source=blog-episode-1&amp;utm_medium=blog&amp;utm_campaign=gfb-s3-2026" target="_blank" rel="noreferrer noopener">GitHub Issues</a> and <a href="https://docs.github.com/issues/planning-and-tracking-with-projects/learning-about-projects/about-projects?utm_source=blog-episode-1&amp;utm_medium=blog&amp;utm_campaign=gfb-s3-2026" target="_blank" rel="noreferrer noopener">GitHub Projects</a>, make sure to check out our documentation.</p>
+
+
+
+<p>Happy coding!</p>
+</body></html>
+<p>The post <a href="https://github.blog/developer-skills/github/github-for-beginners-getting-started-with-github-issues-and-projects/">GitHub for Beginners: Getting started with GitHub Issues and Projects</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></content>
+		
+			</entry>
+		<entry>
+		<author>
+			<name>Ari LiVigni</name>
+					</author>
+
+		<title type="html"><![CDATA[From idea to pull request: A practical guide to building with GitHub Copilot CLI]]></title>
+		<link rel="alternate" type="text/html" href="https://github.blog/ai-and-ml/github-copilot/from-idea-to-pull-request-a-practical-guide-to-building-with-github-copilot-cli/" />
+
+		<id>https://github.blog/?p=94179</id>
+		<updated>2026-02-27T15:18:24Z</updated>
+		<published>2026-02-27T16:00:00Z</published>
+		<category scheme="https://github.blog/" term="AI &amp; ML" /><category scheme="https://github.blog/" term="GitHub Copilot" /><category scheme="https://github.blog/" term="GitHub Copilot CLI" /><category scheme="https://github.blog/" term="GitHub Skills" />
+		<summary type="html"><![CDATA[<p>A hands-on guide to using GitHub Copilot CLI to move from intent to reviewable changes, and how that work flows naturally into your IDE and GitHub.</p>
+<p>The post <a href="https://github.blog/ai-and-ml/github-copilot/from-idea-to-pull-request-a-practical-guide-to-building-with-github-copilot-cli/">From idea to pull request: A practical guide to building with GitHub Copilot CLI</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></summary>
+
+					<content type="html" xml:base="https://github.blog/ai-and-ml/github-copilot/from-idea-to-pull-request-a-practical-guide-to-building-with-github-copilot-cli/"><![CDATA[<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><p>Most developers already do real work in the terminal.</p>
+
+
+
+<p>We initialize projects there, run tests there, debug CI failures there, and make fast, mechanical changes there before anything is ready for review. <a href="https://github.com/features/copilot/cli">GitHub Copilot CLI</a> fits into that reality by helping you move from intent to reviewable diffs directly in your terminal&mdash;and then carry that work into your editor or pull request.</p>
+
+
+
+<p>This blog walks through a practical workflow for using Copilot CLI to create and evolve an application, <a href="https://github.com/skills/create-applications-with-the-copilot-cli">based on a new GitHub Skills exercise</a>. The Skills exercise provides a guided, hands-on walkthrough; this post focuses on <em>why</em> each step works and <em>when</em> to use it in real projects.</p>
+
+
+
+<aside data-color-mode="light" data-dark-theme="dark" data-light-theme="light_dimmed" class="wp-block-group post-aside--large p-4 p-md-6 is-style-light-dimmed has-global-padding is-layout-constrained wp-block-group-is-layout-constrained is-style-light-dimmed--1" style="border-top-width:4px">
+<h2 class="wp-block-heading h5-mktg gh-aside-title is-typography-preset-h5" id="h-go-deeper-with-the-github-skills-exercise" style="margin-top:0">&#128269; Go deeper with the GitHub Skills exercise</h2>
+
+
+
+<p>If you want a fully guided version of this workflow, including hands-on practice, check out the GitHub Skills exercise <a href="https://github.com/skills/create-applications-with-the-copilot-cli"><strong>Create applications with the Copilot CLI</strong></a>.</p>
+
+
+
+<p>It walks through these patterns step by step in a preconfigured instance of GitHub Codespaces and is a good way to experiment safely before applying them to production code. The exercise covers the following:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Install the Copilot CLI and use the issue template to create an issue</li>
+
+
+
+<li>Generate a Node.js CLI calculator app</li>
+
+
+
+<li>Expand calculator functionality with additional operations</li>
+
+
+
+<li>Write unit tests for calculator functions</li>
+
+
+
+<li>Create, review, and merge your pull request</li>
+</ul>
+</aside>
+
+
+
+<h2 class="wp-block-heading" id="what-copilot-cli-is-and-is-not">What Copilot CLI is (and is not)</h2>
+
+
+
+<p>Copilot CLI is a GitHub-aware coding agent in your terminal. You can describe what you want in natural language, use <code>/plan</code> to outline the work before touching code, and then review concrete commands or diffs before anything runs. Copilot may reason internally, but it only executes commands or applies changes after you explicitly approve them.&nbsp;</p>
+
+
+
+<p>In practice, Copilot CLI helps you:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Explore a problem based on your intent</li>
+
+
+
+<li>Propose structured plans using <code>/plan</code> (or you can hit <kbd>Shift</kbd> + <kbd>Tab</kbd> to enter planning mode), or suggest concrete commands and diffs you can review</li>
+
+
+
+<li>Generate or modify files</li>
+
+
+
+<li>Explain failures where they occur</li>
+</ul>
+
+
+
+<p>What it does <em>not</em> do:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Silently run commands or apply changes without your approval</li>
+
+
+
+<li>Replace careful design work</li>
+
+
+
+<li>Eliminate the need for review</li>
+</ul>
+
+
+
+<p>You stay in control of what runs, what changes, and what ships.</p>
+
+
+
+<h2 class="wp-block-heading" id="step-1-start-with-intent-not-scaffolding">Step 1: Start with intent, not scaffolding</h2>
+
+
+
+<p>Instead of starting by choosing a framework or copying a template, start by stating what you want to build.</p>
+
+
+
+<p>From an empty directory, run:</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>copilot
+&gt; Create a small web service with a single JSON endpoint and basic tests</code></pre>
+
+
+
+<p>If you want to generate a proposal in a single prompt instead of entering interactive mode, you can also run:</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>copilot -p "Create a small web service with a single JSON endpoint and basic tests"</code></pre>
+
+
+
+<p>In the Skills exercise, this pattern is used repeatedly: describe intent first, then decide which suggested commands you actually want to run.</p>
+
+
+
+<p>At this stage, Copilot CLI is exploring the problem space. It may:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Suggest a stack</li>
+
+
+
+<li>Outline files</li>
+
+
+
+<li>Propose setup commands</li>
+</ul>
+
+
+
+<p>Nothing runs automatically. You inspect everything before deciding what to execute. This makes the CLI a good place to experiment before committing to a design.</p>
+
+
+
+<h2 class="wp-block-heading" id="step-2-scaffold-only-what-youre-ready-to-own">Step 2: Scaffold only what you&rsquo;re ready to own</h2>
+
+
+
+<p>Once you see a direction you&rsquo;re comfortable with, ask Copilot CLI to help scaffold:</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>&gt; Scaffold this as a minimal Node.js project with a test runner and README</code></pre>
+
+
+
+<p>This is where Copilot CLI is most immediately useful. It can:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Create directories and config,</li>
+
+
+
+<li>Wire basic project structure,</li>
+
+
+
+<li>Generate boilerplate you would otherwise type or copy by hand.</li>
+</ul>
+
+
+
+<p>Copilot CLI does not &ldquo;own&rdquo; the project structure. It suggests scaffolding based on common conventions, which you should treat as a starting point, not a prescription.</p>
+
+
+
+<p>The important constraint is that you&rsquo;re always responsible for the result. Treat the output like code from a teammate: review it, edit it, or discard it.</p>
+
+
+
+<h2 class="wp-block-heading" id="step-3-iterate-at-the-point-of-failure">Step 3: Iterate at the point of failure</h2>
+
+
+
+<p>Run your tests directly inside Copilot CLI:</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>Run all my tests and make sure they pass</code></pre>
+
+
+
+<p>When something fails, ask Copilot about that exact failure in the same session:</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>&gt; Why are these tests failing?</code></pre>
+
+
+
+<p>If you want a concrete proposal instead of an explanation, try:</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>&gt; Fix this test failure and show the diff</code></pre>
+
+
+
+<p>This pattern&mdash;run (<code>!command</code>), inspect, ask, review diff&mdash;keeps the agent grounded in real output instead of abstract prompts.</p>
+
+
+
+<p>&#128161;<strong>Pro tip: </strong>In practice, <code>explain</code> is useful when you want understanding, while <code>suggest</code> is better when you want a concrete proposal you can review. <a href="https://github.blog/ai-and-ml/github-copilot/a-cheat-sheet-to-slash-commands-in-github-copilot-cli/">Learn more about slash commands in Copilot CLI in our guide</a>.&nbsp;</p>
+
+
+
+<h2 class="wp-block-heading" id="step-4-make-mechanical-or-repo-wide-changes">Step 4: Make mechanical or repo-wide changes</h2>
+
+
+
+<p>Copilot CLI is also well suited to changes that are easy to describe but tedious to execute:</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>&gt; Rename all instances of X to Y across the repository and update tests</code></pre>
+
+
+
+<p>Because these changes are mechanical and scoped, they&rsquo;re easy to review and easy to roll back. The CLI gives you a concrete diff instead of a wall of generated text.</p>
+
+
+
+<h2 class="wp-block-heading" id="step-5-move-into-your-editor-when-you-need-to-start-shaping-your-code">Step 5: Move into your editor when you need to start shaping your code</h2>
+
+
+
+<p>Eventually, speed matters less than precision.</p>
+
+
+
+<p>This is the natural handoff point to your editor or IDE, so it can:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Reason about edge cases</li>
+
+
+
+<li>Refine APIs</li>
+
+
+
+<li>Make design decisions</li>
+</ul>
+
+
+
+<p>Copilot works there too, but the key point is <em>why</em> you switch environments. The CLI helps you quickly get to something real. The IDE is where you can shape your code into exactly what you want.&nbsp;</p>
+
+
+
+<p>A good rule of thumb:&nbsp;</p>
+
+
+
+<ul class="wp-block-list">
+<li><strong>CLI:</strong> use <code>/plan</code>, generate a <code>/diff</code>, and move quickly with low ceremony</li>
+
+
+
+<li><strong>IDE:</strong> use <code>/IDE</code> when you need to refine logic and make decisions you&rsquo;ll defend in review</li>
+
+
+
+<li><strong>GitHub: </strong>commit, open a pull request with the command <code>/delegate</code>, and collaborate asynchronously</li>
+</ul>
+
+
+
+<h2 class="wp-block-heading" id="step-6-ship-on-github">Step 6: Ship on GitHub</h2>
+
+
+
+<p>Once the changes look good, commit and open a pull request which you can do through the Copilot CLI in natural language:</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>Add and commit all files with a applicable descriptive messages, push the changes.</code></pre>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>Create a pull request and add Copilot as a reviewer</code></pre>
+
+
+
+<p>Now the work becomes durable:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Reviewable by teammates</li>
+
+
+
+<li>Testable in CI</li>
+
+
+
+<li>Ready for async iteration</li>
+</ul>
+
+
+
+<p>This is where Copilot&rsquo;s value compounds as part of a flow that ends with shipping versus just being a single surface. The Skills exercise intentionally ends here, because this is where Copilot&rsquo;s value becomes durable: in commits, pull requests, and review (not just suggestions).</p>
+
+
+
+<h2 class="wp-block-heading" id="one-workflow-three-moments">One workflow, three moments</h2>
+
+
+
+<p>A helpful mental model for Copilot looks like this:</p>
+
+
+
+<ul class="wp-block-list">
+<li><strong>CLI</strong>: prove value quickly with low ceremony</li>
+
+
+
+<li><strong>IDE</strong>: shape and refine your code</li>
+
+
+
+<li><strong>GitHub</strong>: review, collaborate, and ship</li>
+</ul>
+
+
+
+<p>Copilot CLI is powerful precisely because it fits into this system instead of trying to replace it.</p>
+
+
+
+<aside data-color-mode="light" data-dark-theme="dark" data-light-theme="light_dimmed" class="wp-block-group post-aside--large p-4 p-md-6 is-style-light-dimmed has-global-padding is-layout-constrained wp-block-group-is-layout-constrained is-style-light-dimmed--2" style="border-top-width:4px">
+<h2 class="wp-block-heading h5-mktg gh-aside-title is-typography-preset-h5" id="h-building-with-copilot-a-note-on-the-copilot-sdk" style="margin-top:0">Building with Copilot? A note on the Copilot SDK</h2>
+
+
+
+<p>If you&rsquo;re building a developer tool, internal system, or application where <em>agentic execution itself</em> is part of the product (not just something you run in a terminal), you may want to look at the <strong>GitHub Copilot SDK</strong>, now in technical preview.</p>
+
+
+
+<p>The Copilot SDK gives you programmatic access to the same planning and execution engine that powers Copilot CLI, without requiring you to build or maintain your own orchestration layer. Instead of wiring planners, tools, and recovery logic yourself, you define agent behavior and let Copilot handle execution.</p>
+
+
+
+<p>Use Copilot CLI when you want fast, interactive execution in your own workflow. Use the Copilot SDK when you want those same agentic capabilities embedded inside your application. The SDK exposes the execution engine behind Copilot CLI, but not GitHub-specific features like repository-scoped memory or delegated pull request workflows.</p>
+
+
+
+<p><a href="https://github.com/github/copilot-sdk">Explore Copilot SDK &gt;</a></p>
+</aside>
+
+
+
+<h2 class="wp-block-heading" id="take-this-with-you">Take this with you</h2>
+
+
+
+<p>Copilot CLI is most useful when you treat it like a tool for momentum, not a replacement for judgment.</p>
+
+
+
+<p>Used well, it helps you move from intent to concrete changes faster: exploring ideas, scaffolding projects, diagnosing failures, and handling mechanical work directly in the terminal. When precision matters, you move into your editor. When the work is ready to share, it lands on GitHub as a pull request&mdash;reviewable, testable, and shippable.</p>
+
+
+
+<p>That flow matters more than any single command.</p>
+
+
+
+<p>If you take one thing away from this guide, it&rsquo;s this: Copilot works best when it fits naturally into how developers already build software. Start in the CLI to get unstuck or move quickly, slow down in the IDE to make decisions you can stand behind, and rely on GitHub to make the work durable.</p>
+
+
+
+<div class="wp-block-group post-content-cta has-global-padding is-layout-constrained wp-block-group-is-layout-constrained">
+<p>Get started with <a href="https://github.com/features/copilot/cli">GitHub Copilot CLI</a> or take the <a href="https://github.com/skills/create-applications-with-the-copilot-cli">Skills course &gt;</a></p>
+</div>
+</body></html>
+<p>The post <a href="https://github.blog/ai-and-ml/github-copilot/from-idea-to-pull-request-a-practical-guide-to-building-with-github-copilot-cli/">From idea to pull request: A practical guide to building with GitHub Copilot CLI</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></content>
+		
+			</entry>
+		<entry>
+		<author>
+			<name>Andrea Griffiths</name>
+							<uri>https://andreagriffiths.dev/</uri>
+						</author>
+
+		<title type="html"><![CDATA[What&#8217;s new with GitHub Copilot coding agent]]></title>
+		<link rel="alternate" type="text/html" href="https://github.blog/ai-and-ml/github-copilot/whats-new-with-github-copilot-coding-agent/" />
+
+		<id>https://github.blog/?p=94157</id>
+		<updated>2026-02-26T20:47:05Z</updated>
+		<published>2026-02-26T20:47:02Z</published>
+		<category scheme="https://github.blog/" term="AI &amp; ML" /><category scheme="https://github.blog/" term="GitHub Copilot" /><category scheme="https://github.blog/" term="GitHub Checkout" /><category scheme="https://github.blog/" term="GitHub Copilot coding agent" />
+		<summary type="html"><![CDATA[<p>GitHub Copilot coding agent now includes a model picker, self-review, built-in security scanning, custom agents, and CLI handoff. Here's what's new and how to use it. </p>
+<p>The post <a href="https://github.blog/ai-and-ml/github-copilot/whats-new-with-github-copilot-coding-agent/">What&#8217;s new with GitHub Copilot coding agent</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></summary>
+
+					<content type="html" xml:base="https://github.blog/ai-and-ml/github-copilot/whats-new-with-github-copilot-coding-agent/"><![CDATA[<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><p>You open an issue before lunch. By the time you&rsquo;re back, there&rsquo;s a pull request waiting.</p>
+
+
+
+<p>That&rsquo;s what <a href="https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent">GitHub Copilot coding agent</a> is built for. It works in the background, fixing bugs, adding tests, cleaning up debt, and comes back with a pull request when it&rsquo;s done. While you&rsquo;re writing code in your editor with Copilot in real time, the coding agent is handling the work you&rsquo;ve delegated.</p>
+
+
+
+<p>A few recent updates make that handoff more useful. Here&rsquo;s what shipped and how to start using it.</p>
+
+
+
+<p><em>Visual learner? Watch the video above! &#9757;&#65039;</em></p>
+
+
+
+<h2 class="wp-block-heading" id="h-choose-the-right-model-for-each-task">Choose the right model for each task</h2>
+
+
+
+<p>The Agents panel now includes a model picker.</p>
+
+
+
+<p>Before, every background task ran on a single default model. You couldn&rsquo;t pay for a more robust model to complete harder work or prioritize speed on routine tasks.</p>
+
+
+
+<p>Now you can. Use a faster model for straightforward work like adding unit tests. Upgrade your model for a gnarly refactor or integration tests with real edge cases. If you&rsquo;d rather not think about it, leave it on auto.</p>
+
+
+
+<p><strong>To get started:</strong></p>
+
+
+
+<ul class="wp-block-list">
+<li>Open the Agents panel (top-right in GitHub), select your repo, and pick a model.</li>
+
+
+
+<li>Write a clear prompt and kick off the task.</li>
+
+
+
+<li>Leave the model on auto if you&rsquo;d rather let GitHub choose.</li>
+</ul>
+
+
+
+<p>Model selection is available for Copilot Pro and Pro+ users now, with support for Business and Enterprise coming soon.</p>
+
+
+
+<p><a href="https://docs.github.com/copilot/how-tos/use-copilot-agents/coding-agent/changing-the-ai-model">Learn more about model selection with Copilot coding agent. &#128073;</a></p>
+
+
+
+<h2 class="wp-block-heading" id="h-pull-requests-that-arrive-in-better-shape">Pull requests that arrive in better shape</h2>
+
+
+
+<p>The painful part of reviewing agent output has always been the cleanup. You open the diff and there it is: logic that technically works, but nobody would write it that way.</p>
+
+
+
+<p>Copilot coding agent now reviews its own changes using Copilot code review before it opens the pull request. It gets feedback, iterates, and improves the patch. By the time you&rsquo;re tagged for review, someone already went through it.</p>
+
+
+
+<p><a href="https://youtu.be/S1ch_6fjp5M?t=212&amp;si=wVXe0uClUTohv1qW">In one session</a>, the agent caught that its own string concatenation was overly complex and fixed it before the pull request landed. That kind of thing used to be your problem.</p>
+
+
+
+<p><strong>To get started:</strong></p>
+
+
+
+<ul class="wp-block-list">
+<li>Assign an issue to Copilot or create a task from the Agents panel.</li>
+
+
+
+<li>Click into the task to view the logs.</li>
+
+
+
+<li>See the moments where the agent ran Copilot code review and applied feedback.</li>
+</ul>
+
+
+
+<p>Review the pull request when prompted. Copilot requests your review only after it has iterated.</p>
+
+
+
+<p><a href="https://docs.github.com/en/copilot/how-tos/use-copilot-agents/request-a-code-review/use-code-review">Learn more about Copilot code review + Copilot coding agent. &#128073;</a></p>
+
+
+
+<h2 class="wp-block-heading" id="h-security-checks-that-run-while-the-agent-works">Security checks that run while the agent works</h2>
+
+
+
+<p>Just like with human-generated code, AI-generated code can introduce real risks: vulnerable patterns, secrets accidentally committed, dependencies with known CVEs. The difference is it does it faster. And you really don&rsquo;t want to find that in review.</p>
+
+
+
+<p>Copilot coding agent now runs code scanning, secret scanning, and dependency vulnerability checks directly inside its workflow. If a dependency has a known issue, or something looks like a committed API key, it gets flagged before the pull request opens.</p>
+
+
+
+<p>Code scanning is normally part of GitHub Advanced Security. With Copilot coding agent, you get it for free.</p>
+
+
+
+<p><strong>To get started:</strong></p>
+
+
+
+<ul class="wp-block-list">
+<li>Run any task through the Agents panel.</li>
+
+
+
+<li>Check the session logs as it runs. You&rsquo;ll see scanning entries as the agent works.</li>
+
+
+
+<li>Review the pull request. It&rsquo;s already been through the security filter.</li>
+</ul>
+
+
+
+<p><a href="https://github.blog/changelog/2025-10-28-copilot-coding-agent-now-automatically-validates-code-security-and-quality/">Learn more about security scanning in Copilot coding agent. &#128073;</a></p>
+
+
+
+<h2 class="wp-block-heading" id="h-custom-agents-that-follow-your-team-s-process">Custom agents that follow your team&rsquo;s process</h2>
+
+
+
+<p>A short prompt leaves a lot to judgment. And that judgment isn&rsquo;t always consistent with how your team actually works.</p>
+
+
+
+<p>Custom agents let you codify it. Create a file under <code>.github/agents/</code> and define a specific approach. A performance optimizer agent, for example, can be wired to benchmark first, make the change, then measure the difference before opening a pull request.</p>
+
+
+
+<p>In a <a href="https://youtu.be/S1ch_6fjp5M?t=400&amp;si=xvLSQSMWzdapU5Hf">recent GitHub Checkout demo</a>, that&rsquo;s exactly what happened. The agent benchmarked a lookup, made a targeted fix, and came back with a 99% improvement on that one function. Small scope, real data, no guessing.</p>
+
+
+
+<p>You can share custom agents across your org or enterprise too, so the same process applies everywhere teams are using the coding agent.</p>
+
+
+
+<p><strong>To get started:</strong></p>
+
+
+
+<ul class="wp-block-list">
+<li>Create an agent file under <code>.github/agents/</code> in your repo.</li>
+
+
+
+<li>Open the Agents panel and start a new task.</li>
+
+
+
+<li>Select your custom agent from the options.</li>
+
+
+
+<li>Write a prompt scoped to what that agent does.</li>
+</ul>
+
+
+
+<p><a href="https://docs.github.com/en/copilot/how-tos/use-copilot-agents/coding-agent/create-custom-agents?utm_source=chatgpt.com">Learn more about creating custom agents. &#128073;</a></p>
+
+
+
+<h2 class="wp-block-heading" id="h-move-between-cloud-and-local-without-losing-context">Move between cloud and local without losing context</h2>
+
+
+
+<p>Sometimes you start something in the cloud and want to finish it locally. Sometimes you&rsquo;re deep in your terminal and want to hand something off without losing your flow. Either way, switching contexts used to mean starting the conversation over.</p>
+
+
+
+<p>Now it doesn&rsquo;t. Pull a cloud session into your terminal and you get the branch, the logs, and the full context. Or press <code>&amp;</code> in the CLI to push work back to the cloud and keep going on your end.</p>
+
+
+
+<p><strong>To get started:</strong></p>
+
+
+
+<ul class="wp-block-list">
+<li>Start a task with Copilot coding agent and wait for the session to appear.</li>
+
+
+
+<li>Click &ldquo;Continue in Copilot CLI&rdquo; and copy the command.</li>
+
+
+
+<li>Paste it in your terminal to load the session locally with branch, logs, and context intact.</li>
+
+
+
+<li>Press the ampersand symbol (<code>&amp;</code>) in the CLI to delegate work back to the cloud and keep going locally.</li>
+</ul>
+
+
+
+<p><a href="https://docs.github.com/en/copilot/how-tos/use-copilot-agents/manage-agents">Learn more about Copilot coding agent + CLI handoff. &#128073;</a></p>
+
+
+
+<h2 class="wp-block-heading" id="h-what-this-adds-up-to">What this adds up to</h2>
+
+
+
+<p>Copilot coding agent has come a long way. Model selection, self-review, security scanning, custom agents, CLI handoff&mdash;and that&rsquo;s just what shipped recently. The team is actively working on private mode, planning before coding, and using the agent for things that don&rsquo;t even need a pull request, like summarizing issues or generating reports. There&rsquo;s a lot more coming. Stay tuned.</p>
+
+
+
+<p>Share feedback on what ships next in <a href="https://github.com/orgs/community/discussions/categories/copilot-conversations">GitHub Community discussions</a>.</p>
+
+
+
+<div class="wp-block-group post-content-cta has-global-padding is-layout-constrained wp-block-group-is-layout-constrained">
+<p>Get started with <a href="https://docs.github.com/en/copilot/concepts/agents/coding-agent/about-coding-agent">GitHub Copilot coding agent &gt;</a></p>
+</div>
+</body></html>
+<p>The post <a href="https://github.blog/ai-and-ml/github-copilot/whats-new-with-github-copilot-coding-agent/">What&#8217;s new with GitHub Copilot coding agent</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></content>
+		
+			</entry>
+		<entry>
+		<author>
+			<name>Gwen Davis</name>
+					</author>
+
+		<title type="html"><![CDATA[Multi-agent workflows often fail. Here’s how to engineer ones that don’t.]]></title>
+		<link rel="alternate" type="text/html" href="https://github.blog/ai-and-ml/generative-ai/multi-agent-workflows-often-fail-heres-how-to-engineer-ones-that-dont/" />
+
+		<id>https://github.blog/?p=94039</id>
+		<updated>2026-02-24T00:27:42Z</updated>
+		<published>2026-02-24T16:00:00Z</published>
+		<category scheme="https://github.blog/" term="AI &amp; ML" /><category scheme="https://github.blog/" term="Generative AI" /><category scheme="https://github.blog/" term="agentic AI" /><category scheme="https://github.blog/" term="AI agents" /><category scheme="https://github.blog/" term="GitHub Copilot" />
+		<summary type="html"><![CDATA[<p>Most multi-agent workflow failures come down to missing structure, not model capability. Learn the three engineering patterns that make agent systems reliable.</p>
+<p>The post <a href="https://github.blog/ai-and-ml/generative-ai/multi-agent-workflows-often-fail-heres-how-to-engineer-ones-that-dont/">Multi-agent workflows often fail. Here’s how to engineer ones that don’t.</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></summary>
+
+					<content type="html" xml:base="https://github.blog/ai-and-ml/generative-ai/multi-agent-workflows-often-fail-heres-how-to-engineer-ones-that-dont/"><![CDATA[<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><p>If you&rsquo;ve built a multi-agent workflow, you&rsquo;ve probably seen it fail in a way that&rsquo;s hard to explain.</p>
+
+
+
+<p>The system completes, and agents take actions. But somewhere along the way, something subtle goes wrong. You might see an agent close an issue that another agent just opened, or ship a change that fails a downstream check it didn&rsquo;t know existed.</p>
+
+
+
+<p>That&rsquo;s because the moment agents begin handling related tasks&mdash;triaging issues, proposing changes, running checks, and opening pull requests&mdash;they start making implicit assumptions about state, ordering, and validation. Without providing explicit instructions, data formats, and interfaces, things won&rsquo;t go the way you planned.&nbsp;</p>
+
+
+
+<p>Through our work on agentic experiences at GitHub across GitHub Copilot, internal automations, and emerging multi-agent orchestration patterns, we&rsquo;ve seen multi-agent systems behave much less like chat interfaces and much more like distributed systems.</p>
+
+
+
+<p>This post is for engineers building multi-agent systems. We&rsquo;ll walk through the most common reasons they fail and the engineering patterns that make them more reliable.</p>
+
+
+
+<aside data-color-mode="light" data-dark-theme="dark" data-light-theme="light_dimmed" class="wp-block-group post-aside--large p-4 p-md-6 is-style-light-dimmed has-global-padding is-layout-constrained wp-block-group-is-layout-constrained is-style-light-dimmed--3" style="border-top-width:4px">
+<h2 class="wp-block-heading h5-mktg gh-aside-title is-typography-preset-h5" id="h-what-multi-agent-systems-are-and-how-to-use-them" style="margin-top:0">What multi-agent systems are and how to use them</h2>
+
+
+
+<p>Teams reach for multi-agent workflows when a single agent isn&rsquo;t enough to reliably solve a problem end to end. But introducing multiple agents also introduces new failure surfaces: shared state, ordering assumptions, implicit handoffs, and non-deterministic behavior.</p>
+
+
+
+<p>We see developers use multi-agent workflows for things like:</p>
+
+
+
+<ul class="wp-block-list">
+<li><strong>Codebase maintenance and dependency updates</strong></li>
+
+
+
+<li><strong>Automated code quality checks and refactors</strong></li>
+
+
+
+<li><strong>Spec-driven feature implementation</strong></li>
+
+
+
+<li><strong>Issue and pull request triage</strong></li>
+</ul>
+
+
+
+<p>These scenarios only work reliably when every step is explicit and constrained.</p>
+</aside>
+
+
+
+<h2 class="wp-block-heading" id="h-1-natural-language-is-messy-typed-schemas-make-it-reliable">1. Natural language is messy. Typed schemas make it reliable.</h2>
+
+
+
+<p>Multi-agent workflows often fail early because agents exchange messy language or inconsistent JSON. Field names change, data types don&rsquo;t match, formatting shifts, and nothing enforces consistency.</p>
+
+
+
+<p>Just like establishing contracts early in development helps teams collaborate without stepping on each other, typed interfaces and strict schemas add structure at every boundary. Agents pass machine-checkable data, invalid messages fail fast, and downstream steps don&rsquo;t have to guess what a payload means.</p>
+
+
+
+<p>Most teams start by defining the data shape they expect agents to return:</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>type UserProfile = {
+  id: number;
+  email: string;
+  plan: "free" | "pro" | "enterprise";
+};</code></pre>
+
+
+
+<p>This changes debugging from &ldquo;inspect logs and guess&rdquo; to &ldquo;this payload violated schema X.&rdquo; Treat schema violations like contract failures: retry, repair, or escalate before bad state propagates.</p>
+
+
+
+<p><strong>The bottom line:</strong> Typed schemas are table stakes in multi-agent workflows. Without them, nothing else works. <a href="https://github.blog/open-source/maintainers/how-github-models-can-help-open-source-maintainers-focus-on-what-matters/">See how GitHub Models enable structured, repeatable AI workflows in real projects.</a> &#128073;</p>
+
+
+
+<h2 class="wp-block-heading" id="h-2-vague-intent-breaks-agents-action-schemas-make-it-clear">2. Vague intent breaks agents. Action schemas make it clear.</h2>
+
+
+
+<p>Even with typed data, multi-agent workflows still fail because LLMs don&rsquo;t follow implied intent, only explicit instructions.</p>
+
+
+
+<p>&ldquo;Analyze this issue and help the team take action&rdquo; sounds clear. But different agents may close, assign, escalate, or do nothing&mdash;each reasonable, none automatable.</p>
+
+
+
+<p>Action schemas fix this by defining the exact set of allowed actions and their structure. Not every step needs structure, but the outcome must always resolve to a small, explicit set of actions.</p>
+
+
+
+<p>Here&rsquo;s what an action schema might look like:</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>const ActionSchema = z.discriminatedUnion("type", [
+  { type: "request-more-info", missing: string[] },
+  { type: "assign", assignee: string },
+  { type: "close-as-duplicate", duplicateOf: number },
+  { type: "no-action" }
+]);</code></pre>
+
+
+
+<p>With this in place, agents must return exactly one valid action. Anything else fails validation and is retried or escalated.</p>
+
+
+
+<p><strong>The bottom line:</strong> Most agent failures are action failures. <a href="https://github.blog/ai-and-ml/github-copilot/5-tips-for-writing-better-custom-instructions-for-copilot/">For reducing ambiguity even earlier in the workflow&mdash;at the instruction level&mdash;this guide to writing effective custom instructions is helpful.</a> &#128073;</p>
+
+
+
+<h2 class="wp-block-heading" id="h-3-loose-interfaces-create-errors-mcp-adds-the-structure-agents-need">3. Loose interfaces create errors. MCP adds the structure agents need.</h2>
+
+
+
+<p>Typed schemas, constrained actions, and structured reasoning only work if they&rsquo;re consistently enforced. Without enforcement, they&rsquo;re conventions, not guarantees.</p>
+
+
+
+<p><a href="https://github.com/modelcontextprotocol">Model Context Protocol (MCP)</a> is the enforcement layer that turns these patterns into contracts.</p>
+
+
+
+<p>MCP defines explicit input and output schemas for every tool and resource, validating calls before execution.</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>{
+  "name": "create_issue",
+  "input_schema": { ... },
+  "output_schema": { ... }
+}</code></pre>
+
+
+
+<p>With MCP, agents can&rsquo;t invent fields, omit required inputs, or drift across interfaces. Validation happens before execution, which prevents bad state from ever reaching production systems.</p>
+
+
+
+<p><strong>The bottom line:</strong> Schemas define structure whereas action schemas define intent. MCP enforces both. <a href="https://github.blog/ai-and-ml/llms/what-the-heck-is-mcp-and-why-is-everyone-talking-about-it/">Learn more about how MCP works and why it matters.</a> &#128073;</p>
+
+
+
+<aside data-color-mode="light" data-dark-theme="dark" data-light-theme="light_dimmed" class="wp-block-group post-aside--large p-4 p-md-6 is-style-light-dimmed has-global-padding is-layout-constrained wp-block-group-is-layout-constrained is-style-light-dimmed--4" style="border-top-width:4px">
+<h3 class="wp-block-heading h5-mktg gh-aside-title is-typography-preset-h5" id="h-design-principles-for-multi-agent-workflows" style="margin-top:0">Design principles for multi-agent workflows</h3>
+
+
+
+<p>Based on our experience building and operating agentic systems at GitHub, these principles help make multi-agent workflows reliable at scale:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Design for failure first</li>
+
+
+
+<li>Validate every agent boundary</li>
+
+
+
+<li>Constrain actions before adding more agents</li>
+
+
+
+<li>Log intermediate state</li>
+
+
+
+<li>Expect retries and partial failures</li>
+
+
+
+<li>Treat agents like distributed systems, not chat flows</li>
+</ul>
+</aside>
+
+
+
+<h2 class="wp-block-heading" id="moving-forward-together">Moving forward together</h2>
+
+
+
+<p>Multi-agent systems work when structure is explicit. When you add typed schemas, constrained actions, and structured interfaces enforced by MCP, agents start behaving like reliable system components.</p>
+
+
+
+<p>The shift is simple but powerful: treat agents like code, not chat interfaces.</p>
+
+
+
+<p><a href="https://docs.github.com/en/copilot/concepts/agents/coding-agent/mcp-and-coding-agent">Learn how MCP enables structured, deterministic agent-tool interactions.</a> &#128073;</p>
+</body></html>
+<p>The post <a href="https://github.blog/ai-and-ml/generative-ai/multi-agent-workflows-often-fail-heres-how-to-engineer-ones-that-dont/">Multi-agent workflows often fail. Here’s how to engineer ones that don’t.</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></content>
+		
+			</entry>
+		<entry>
+		<author>
+			<name>Andrea Griffiths</name>
+							<uri>https://andreagriffiths.dev/</uri>
+						</author>
+
+		<title type="html"><![CDATA[How AI is reshaping developer choice (and Octoverse data proves it)]]></title>
+		<link rel="alternate" type="text/html" href="https://github.blog/ai-and-ml/generative-ai/how-ai-is-reshaping-developer-choice-and-octoverse-data-proves-it/" />
+
+		<id>https://github.blog/?p=93955</id>
+		<updated>2026-02-19T02:02:34Z</updated>
+		<published>2026-02-19T17:00:00Z</published>
+		<category scheme="https://github.blog/" term="AI &amp; ML" /><category scheme="https://github.blog/" term="Generative AI" /><category scheme="https://github.blog/" term="GitHub Copilot" /><category scheme="https://github.blog/" term="Octoverse" /><category scheme="https://github.blog/" term="enterprise" /><category scheme="https://github.blog/" term="generative AI" /><category scheme="https://github.blog/" term="open source" />
+		<summary type="html"><![CDATA[<p>AI is rewiring developer preferences through convenience loops. Octoverse 2025 reveals how AI compatibility is becoming the new standard for technology choice.</p>
+<p>The post <a href="https://github.blog/ai-and-ml/generative-ai/how-ai-is-reshaping-developer-choice-and-octoverse-data-proves-it/">How AI is reshaping developer choice (and Octoverse data proves it)</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></summary>
+
+					<content type="html" xml:base="https://github.blog/ai-and-ml/generative-ai/how-ai-is-reshaping-developer-choice-and-octoverse-data-proves-it/"><![CDATA[<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><p>You know that feeling when a sensory trigger instantly pulls you back to a moment in your life? For me, it&rsquo;s Icy Hot. One whiff and I&rsquo;m back to 5 a.m. formation time in the army. My shoulders tense. My body remembers. It&rsquo;s not logical. It&rsquo;s just how memory works. We build strong associations between experiences and cues around them. Those patterns get encoded and guide our behavior long after the moment passes.</p>
+
+
+
+<p>That same pattern is happening across the software ecosystem as AI becomes a default part of how we build. For example, we form associations between convenience and specific technologies. Those loops influence what developers reach for, what they choose to learn, and ultimately, which technologies gain momentum.</p>
+
+
+
+<p><a href="https://github.blog/news-insights/octoverse/octoverse-a-new-developer-joins-github-every-second-as-ai-leads-typescript-to-1/">Octoverse 2025</a> data illustrates this in real time. And it&rsquo;s not subtle.&nbsp;</p>
+
+
+
+<p>In August 2025, <strong>TypeScript surpassed both Python and JavaScript to become the most-used language on GitHub for the first time ever</strong>. That&rsquo;s the headline. But the deeper story is what it signals: AI isn&rsquo;t just speeding up coding. It&rsquo;s reshaping which languages, frameworks, and tools developers choose in the first place.</p>
+
+
+
+<figure class="wp-block-image size-large"><img data-recalc-dims="1" loading="lazy" decoding="async" height="576" width="1024" src="https://github.blog/wp-content/uploads/2025/10/octoverse-2025-top-programming-languages.png?resize=1024%2C576" alt="A chart showing the top 10 programming languages on GitHub from 2023 to 2025. TypeScript rises to #1 in 2025, overtaking Python and JavaScript, which move to #2 and #3 respectively. Other top languages include Java, C#, PHP, Shell, C++, HCL, and Go. The chart tracks ranking changes over time on a dark background with colored lines representing each language." class="wp-image-91509" srcset="https://github.blog/wp-content/uploads/2025/10/octoverse-2025-top-programming-languages.png?w=1728 1728w, https://github.blog/wp-content/uploads/2025/10/octoverse-2025-top-programming-languages.png?w=300 300w, https://github.blog/wp-content/uploads/2025/10/octoverse-2025-top-programming-languages.png?w=768 768w, https://github.blog/wp-content/uploads/2025/10/octoverse-2025-top-programming-languages.png?w=1024 1024w, https://github.blog/wp-content/uploads/2025/10/octoverse-2025-top-programming-languages.png?w=1536 1536w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<h2 class="wp-block-heading" id="h-the-convenience-loop-is-how-memory-becomes-behavior">The convenience loop is how memory becomes behavior</h2>
+
+
+
+<p>When a task or process goes smoothly, your brain remembers. Convenience captures attention. Reduced friction becomes a preference&mdash;and preferences at scale can shift ecosystems.</p>
+
+
+
+<p><strong>Eighty percent of new developers on GitHub use Copilot within their first week.</strong> Those early exposures reset the baseline for what &ldquo;easy&rdquo; means.</p>
+
+
+
+<p>When AI handles boilerplate and error-prone syntax, the penalty for choosing powerful but complex languages disappears. Developers stop avoiding tools with high overhead and start picking based on utility instead. The language adoption data shows this behavioral shift:</p>
+
+
+
+<ul class="wp-block-list">
+<li>TypeScript grew 66% year-over-year</li>
+
+
+
+<li>JavaScript grew 24%</li>
+
+
+
+<li>Shell scripting usage in <a href="https://github.blog/news-insights/octoverse/typescript-python-and-the-ai-feedback-loop-changing-software-development/">AI-generated projects jumped 206%</a></li>
+</ul>
+
+
+
+<p>That last one matters. We didn&rsquo;t suddenly love Bash. AI absorbed the friction that made shell scripting painful. So now we use the right tool for the job without the usual cost.&nbsp;</p>
+
+
+
+<p>This is what Octoverse is really showing us: <strong>developer choice is shifting toward&nbsp; technologies that work best with the tools we&rsquo;re already using.</strong></p>
+
+
+
+<h2 class="wp-block-heading" id="h-the-technical-reason-behind-the-shift">The technical reason behind the shift</h2>
+
+
+
+<p>There are concrete, technical reasons AI performs better with strongly typed languages.</p>
+
+
+
+<p>Strongly typed languages give AI much clearer constraints. In JavaScript, a variable could be anything. In TypeScript, declaring <code>x: string</code> immediately eliminates all non-string operations. That constraint matters. Constraints help AI generate more reliable, contextually correct code. And developers respond to that reliability.</p>
+
+
+
+<p>That effect compounds when you look at AI model integration across GitHub. Over 1.1 million public repositories now use LLM SDKs. This is mainstream adoption, not fringe experimentation. And it&rsquo;s concentrating around the languages and frameworks that work best with AI.</p>
+
+
+
+<figure class="wp-block-image size-large"><img data-recalc-dims="1" loading="lazy" decoding="async" height="576" width="1024" src="https://github.blog/wp-content/uploads/2025/10/octoverse-2025-total-number-of-projects-using-genAI-model-SDKs.png?resize=1024%2C576" alt="A line and area chart titled &lsquo;Cumulative count of public projects using generative AI model SDKs,&rsquo; showing rapid growth from 2021 to 2025. The curve starts near zero and climbs steeply to over 1.1 million repositories by 2025, illustrating the widespread adoption of LLM and AI model SDKs. The chart features a purple-to-pink gradient fill on a dark background with geometric ribbons on the left." class="wp-image-91522" srcset="https://github.blog/wp-content/uploads/2025/10/octoverse-2025-total-number-of-projects-using-genAI-model-SDKs.png?w=1728 1728w, https://github.blog/wp-content/uploads/2025/10/octoverse-2025-total-number-of-projects-using-genAI-model-SDKs.png?w=300 300w, https://github.blog/wp-content/uploads/2025/10/octoverse-2025-total-number-of-projects-using-genAI-model-SDKs.png?w=768 768w, https://github.blog/wp-content/uploads/2025/10/octoverse-2025-total-number-of-projects-using-genAI-model-SDKs.png?w=1024 1024w, https://github.blog/wp-content/uploads/2025/10/octoverse-2025-total-number-of-projects-using-genAI-model-SDKs.png?w=1536 1536w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<h2 class="wp-block-heading" id="moving-fast-without-breaking-your-architecture">Moving fast without breaking your architecture&nbsp;</h2>
+
+
+
+<p>AI tools are amplifying developer productivity in ways we haven&rsquo;t seen before. The question is how to use them strategically. The teams getting the best results aren&rsquo;t fighting the convenience loop. They&rsquo;re designing their workflows to harness it while maintaining the architectural standards that matter.</p>
+
+
+
+<h3 class="wp-block-heading" id="for-developers-and-teams">For developers and teams</h3>
+
+
+
+<p><strong>Establish patterns before you generate.</strong> AI is fantastic at following established patterns, but struggles to invent them cleanly. If you define your first few endpoints or components with strong structure, Copilot will follow those patterns. Good foundations scale. Weak ones get amplified.</p>
+
+
+
+<p><strong>Use type systems as guardrails, not crutches.</strong> TypeScript reduces errors, but passing type checks isn&rsquo;t the same as expressing correct business logic. Use types to bound the space of valid code, not as your primary correctness signal.</p>
+
+
+
+<p><strong>Test AI-generated code harder, not less.</strong> There&rsquo;s a temptation to trust AI output because it &ldquo;looks right&rdquo; and passes initial checks. Resist that. Don&rsquo;t skip testing.</p>
+
+
+
+<h3 class="wp-block-heading" id="for-engineering-leaders">For engineering leaders</h3>
+
+
+
+<p><strong>Recognize the velocity jump and prepare for its costs.</strong> AI-assisted development often produces a 20&ndash;30 percent increase in throughput. That&rsquo;s a win. But higher throughput means architectural drift can accumulate faster without the right guardrails.</p>
+
+
+
+<p><strong>Standardize before you scale. </strong>Document patterns. Publish template repositories. Make your architectural decisions explicit. AI tools will mirror whatever structures they see.</p>
+
+
+
+<p><strong>Track what AI is generating, not just how much.</strong> The <a href="https://github.blog/changelog/2025-10-28-copilot-usage-metrics-dashboard-and-api-in-public-preview/">Copilot usage metrics dashboard</a> (now in public preview for Enterprise) lets you see beyond acceptance rates. You can track daily and weekly active users, agent adoption percentages, lines of code added and deleted, and language and model usage patterns across your organization. The dashboard answers a critical question: how well are teams using AI?&nbsp;</p>
+
+
+
+<p>Use these metrics to identify patterns. If you&rsquo;re seeing high agent adoption but code quality issues in certain teams, that&rsquo;s a signal those teams need better prompt engineering training or stricter review standards. If specific languages or models correlate with higher defect rates, that&rsquo;s data you can act on. The API provides user-level granularity for deeper analysis, so you can build custom dashboards that track the metrics that matter most to your organization.</p>
+
+
+
+<p><strong>Invest in architectural review capacity.</strong> As developers become more productive, senior engineering time becomes more valuable, not less. Someone must ensure the system remains coherent as more code lands faster.</p>
+
+
+
+<p><strong>Make architectural decisions explicit and accessible.</strong> AI learns from context. ADRs, READMEs, comments, and well-structured repos all help AI generate code aligned with your design principles.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-what-the-octoverse-2025-findings-mean-for-you">What the Octoverse 2025 findings mean for you</h2>
+
+
+
+<p>The technology choices you make today are shaped by forces you may not notice: convenience, habit, AI-assisted flow, and how much friction each stack introduces..</p>
+
+
+
+<p>&#128161; <strong>Pro tip:</strong> Look at the last three technology decisions you made. Language for a new project, framework for a feature, tool for your workflow. How much did AI tooling support factor into those choices? If the answer is &ldquo;not much,&rdquo; I&rsquo;d bet it factored in more than you realized.</p>
+
+
+
+<p>AI isn&rsquo;t just changing how fast we code. It&rsquo;s reshaping the ecosystem around which tools work best with which languages. Once those patterns set in, reversing them becomes difficult.</p>
+
+
+
+<p>If you&rsquo;re choosing technologies without considering AI compatibility, you&rsquo;re setting yourself up for future friction. If you&rsquo;re building languages or frameworks, AI support can&rsquo;t be an afterthought.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-here-s-a-challenge">Here&rsquo;s a challenge</h2>
+
+
+
+<p>Next time you start a project, notice which technologies feel &ldquo;natural&rdquo; to reach for. Notice when AI suggestions feel effortless and when they don&rsquo;t. Those moments of friction and flow are encoding your future preferences right now.</p>
+
+
+
+<p>Are you choosing your tools consciously, or are your tools choosing themselves through the path of least resistance?</p>
+
+
+
+<p>We&rsquo;re all forming our digital &ldquo;Icy Hot&rdquo; moments. The trick is being aware of them.</p>
+
+
+
+<div class="wp-block-group post-content-cta has-global-padding is-layout-constrained wp-block-group-is-layout-constrained">
+<p><strong>Looking to stay one step ahead?&nbsp;</strong><a href="https://github.blog/news-insights/octoverse/octoverse-a-new-developer-joins-github-every-second-as-ai-leads-typescript-to-1/?utm_source=octoverse-cli-cta&amp;utm_medium=octoverse&amp;utm_campaign=universe25post">Read the latest Octoverse report</a> and try the <a href="https://github.blog/changelog/2025-10-28-copilot-usage-metrics-dashboard-and-api-in-public-preview/">Copilot usage metrics dashboard</a>.</p>
+</div>
+</body></html>
+<p>The post <a href="https://github.blog/ai-and-ml/generative-ai/how-ai-is-reshaping-developer-choice-and-octoverse-data-proves-it/">How AI is reshaping developer choice (and Octoverse data proves it)</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></content>
+		
+			</entry>
+		<entry>
+		<author>
+			<name>Dylan Birtolo</name>
+					</author>
+
+		<title type="html"><![CDATA[What to expect for open source in 2026]]></title>
+		<link rel="alternate" type="text/html" href="https://github.blog/open-source/maintainers/what-to-expect-for-open-source-in-2026/" />
+
+		<id>https://github.blog/?p=93939</id>
+		<updated>2026-02-18T18:41:45Z</updated>
+		<published>2026-02-18T18:41:42Z</published>
+		<category scheme="https://github.blog/" term="Maintainers" /><category scheme="https://github.blog/" term="Octoverse" /><category scheme="https://github.blog/" term="Open Source" /><category scheme="https://github.blog/" term="open source" />
+		<summary type="html"><![CDATA[<p>Let’s dig into the 2025’s open source data on GitHub to see what we can learn about the future.</p>
+<p>The post <a href="https://github.blog/open-source/maintainers/what-to-expect-for-open-source-in-2026/">What to expect for open source in 2026</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></summary>
+
+					<content type="html" xml:base="https://github.blog/open-source/maintainers/what-to-expect-for-open-source-in-2026/"><![CDATA[<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><p>Over the years (decades), open source has grown and changed along with software development, evolving as the open source community becomes more global.</p>
+
+
+
+<p>But with any growth comes pain points. In order for open source to continue to thrive, it&rsquo;s important for us to be aware of these challenges and determine how to overcome them.</p>
+
+
+
+<p>To that end, let&rsquo;s take a look at what Octoverse 2025 reveals about the direction open source is taking. Feel free to check out <a href="https://github.blog/news-insights/octoverse/octoverse-a-new-developer-joins-github-every-second-as-ai-leads-typescript-to-1/" target="_blank" rel="noreferrer noopener">the full Octoverse report</a>, and make your own predictions.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-growth-that-s-global-in-scope">Growth that&rsquo;s global in scope</h2>
+
+
+
+<p>In 2025, GitHub saw about 36 million new developers join our community. While that number alone is huge, it&rsquo;s also important to see where in the world that growth comes from. India added 5.2 million developers, and there was significant growth across Brazil, Indonesia, Japan, and Germany.&nbsp;</p>
+
+
+
+<p>What does this mean? It&rsquo;s clear that open source is becoming more global than it was before. It also means that oftentimes, the majority of developers live outside the regions where the projects they&rsquo;re working on originated. This is a fundamental shift. While there have always been projects with global contributors, it&rsquo;s now starting to become a reality for a greater number of projects.</p>
+
+
+
+<p>Given this global scale, open source can&rsquo;t rely on contributors sharing work hours, communication strategies, cultural expectations, or even language. The projects that are going to thrive are the ones that support the global community.</p>
+
+
+
+<p>One of the best ways to do this is through explicit communication maintained in areas like contribution guidelines, codes of conduct, review expectations, and governance documentation. These are essential infrastructure for large projects that want to support this community. Projects that don&rsquo;t include these guidelines will have trouble scaling as the number of contributors increases across the globe. Those that do provide them will be more resilient, sustainable, and will provide an easier path to onboard new contributors.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-the-double-edged-sword-of-ai">The double-edged sword of AI</h2>
+
+
+
+<p>AI has had a major role in accelerating global participation over 2025. It&rsquo;s created a pathway that makes it easier for new developers to enter the coding world by dramatically lowering the barrier to entry. It helps contributors understand unfamiliar codebases, draft patches, and even create new projects from scratch. Ultimately, it has helped new developers make their first contributions sooner.</p>
+
+
+
+<p>However, it has also created a lot of noise, or what is called &ldquo;AI slop.&rdquo; AI slop is a large quantity of low-quality&mdash;and oftentimes inaccurate&mdash;contributions that don&rsquo;t add value to the project. Or they are contributions that would require so much work to incorporate, it would be faster to implement the solution yourself.&nbsp;</p>
+
+
+
+<p>This makes it harder than ever to maintain projects and make sure they continue moving forward in the intended direction. Auto-generated issues and pull requests increase volume without always increasing the quality of the project. As a result, maintainers need to spend more time reviewing contributions from developers with vastly variable levels of skill. In a lot of cases, the amount of time it takes to review the additional suggestions has risen faster than the number of maintainers.</p>
+
+
+
+<p>Even if you remove AI slop from the equation, the sheer volume of contributions has grown, potentially to unmanageable levels. It can feel like a denial of service attack on human attention.</p>
+
+
+
+<p>This is why maintainers have been asking: how do you sift through the noise and find the most important contributions? Luckily, <a href="https://github.blog/open-source/maintainers/welcome-to-the-eternal-september-of-open-source-heres-what-we-plan-to-do-for-maintainers/#h-what-we-re-doing-at-github">we&rsquo;ve added some tools to help</a>. There are also a number of open source AI projects specifically trying to address the AI slop issue. In addition, maintainers have been using AI defensively, using it to triage issues, detect duplicate issues, and handle simple maintenance like the labeling of issues. By helping to offload some of the grunt work, it gives maintainers more time to focus on the issues that require human intervention and decision making.</p>
+
+
+
+<p>Expect the open source projects that continue to expand and grow over the next year to be those that incorporate AI as part of the community infrastructure. In order to deal with this quantity of information, AI cannot be just a coding assistant. It needs to find ways to ease the pressure of being a maintainer and find a way to make that work more scalable.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-record-growth-is-healthy-if-it-s-planned-for">Record growth is healthy, if it&rsquo;s planned for</h2>
+
+
+
+<p>On the surface, record global growth looks like success. But this influx of newer developers can also be a burden. The sheer popularity of projects that cover basics, such as contributing your first pull request to GitHub, shows that a lot of these new developers are very much in their infancy in terms of comfort with open source. There&rsquo;s uncertainty about how to move forward and how to interact with the community. Not to mention challenges with repetitive onboarding questions and duplicate issues.</p>
+
+
+
+<p>This results in a growing gap between the number of participants in open source projects and the number of maintainers with a sense of ownership. As new developers grow at record rates, this gap will widen.</p>
+
+
+
+<p>The way to address this is going to be less about having individuals serving as mentors&mdash;although that will still be important. It will be more about creating durable systems that show organizational maturity. What does this mean? While not an exhaustive list, here are some items:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Having a clear, defined path to move from contributor to reviewer to maintainer. Be aware that this can be difficult without a mentor to help guide along this path.</li>
+
+
+
+<li>Shared governance models that don&rsquo;t rely on a single timezone or small group of people.</li>
+
+
+
+<li>Documentation that provides guidance on how to contribute and the goals of the project.</li>
+</ul>
+
+
+
+<p>By helping to make sure that the number of maintainers keeps relative pace with the number of contributors, projects will be able to take advantage of the record growth. This does create an additional burden on the current maintainers, but the goal is to invest in a solid foundation that will result in a more stable structure in the future. Projects that don&rsquo;t do this will have trouble functioning at the increased global scale and might start to stall or see problems like increased technical debt.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-but-what-are-people-building">But what are people building?</h2>
+
+
+
+<p>It can&rsquo;t be denied that AI was a major focus&mdash;about 60% of the top growing projects were AI focused. However, there were several that had nothing to do with AI. These projects (e.g., Home Assistant, VS Code, Godot) continue to thrive because they meet real needs and support broad, international communities.</p>
+
+
+
+<figure class="wp-block-image size-full"><img data-recalc-dims="1" loading="lazy" decoding="async" width="1440" height="810" src="https://github.blog/wp-content/uploads/2025/10/octoverse-2025-fastest-growing-open-source-projects-by-contributors.png?resize=1440%2C810" alt="A list of the fastest-growing open source projects by contribution: zen-browser/desktop, cline/cline, vllm-project/vllm, astral-sh/uv, microsoft/vscode, infiniflow/ragflow, sgl-project/sglang, continuedev/continue, comfyanonymous/ComfyUI, and home-assistant/core." class="wp-image-91494" srcset="https://github.blog/wp-content/uploads/2025/10/octoverse-2025-fastest-growing-open-source-projects-by-contributors.png?w=1440 1440w, https://github.blog/wp-content/uploads/2025/10/octoverse-2025-fastest-growing-open-source-projects-by-contributors.png?w=300 300w, https://github.blog/wp-content/uploads/2025/10/octoverse-2025-fastest-growing-open-source-projects-by-contributors.png?w=768 768w, https://github.blog/wp-content/uploads/2025/10/octoverse-2025-fastest-growing-open-source-projects-by-contributors.png?w=1024 1024w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<p>Just as the developer space is growing on a global scale, the same can be said about the projects that garner the most interest. These types of projects that support a global community and address their needs are going to continue to be popular and have the most support.&nbsp;</p>
+
+
+
+<p>This just continues to reinforce how open source is really embracing being a global phenomenon as opposed to a local one.</p>
+
+
+
+<h2 class="wp-block-heading" id="what-this-year-will-likely-hold">What this year will likely hold</h2>
+
+
+
+<p>Open source in 2026 won&rsquo;t be defined by a single trend that emerged over 2025. Instead, it will be shaped by how the community responds to the pressures identified over the last year, particularly with the surge in AI and an explosively growing global community.</p>
+
+
+
+<p>For developers, this means that it&rsquo;s important to invest in processes as much as code. Open source is scaling in ways that would have been impossible to imagine a decade ago, and the important question going forward isn&rsquo;t how much it will grow&mdash;it&rsquo;s how can you make that growth sustainable.</p>
+
+
+
+<div class="wp-block-group post-content-cta has-global-padding is-layout-constrained wp-block-group-is-layout-constrained">
+<p><a href="https://github.blog/news-insights/octoverse/octoverse-a-new-developer-joins-github-every-second-as-ai-leads-typescript-to-1/" target="_blank" rel="noreferrer noopener">Read the full Octoverse report &gt;</a></p>
+</div>
+</body></html>
+<p>The post <a href="https://github.blog/open-source/maintainers/what-to-expect-for-open-source-in-2026/">What to expect for open source in 2026</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></content>
+		
+			</entry>
+		<entry>
+		<author>
+			<name>Gregg Cochran</name>
+					</author>
+
+		<title type="html"><![CDATA[Securing the AI software supply chain: Security results across 67 open source projects]]></title>
+		<link rel="alternate" type="text/html" href="https://github.blog/open-source/maintainers/securing-the-ai-software-supply-chain-security-results-across-67-open-source-projects/" />
+
+		<id>https://github.blog/?p=93831</id>
+		<updated>2026-02-17T20:22:38Z</updated>
+		<published>2026-02-17T19:00:00Z</published>
+		<category scheme="https://github.blog/" term="Maintainers" /><category scheme="https://github.blog/" term="Open Source" /><category scheme="https://github.blog/" term="AI security" /><category scheme="https://github.blog/" term="open source" /><category scheme="https://github.blog/" term="supply chain security" />
+		<summary type="html"><![CDATA[<p>Learn how The GitHub Secure Open Source Fund helped 67 critical AI‑stack projects accelerate fixes, strengthen ecosystems, and advance open source resilience.</p>
+<p>The post <a href="https://github.blog/open-source/maintainers/securing-the-ai-software-supply-chain-security-results-across-67-open-source-projects/">Securing the AI software supply chain: Security results across 67 open source projects</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></summary>
+
+					<content type="html" xml:base="https://github.blog/open-source/maintainers/securing-the-ai-software-supply-chain-security-results-across-67-open-source-projects/"><![CDATA[<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><p>Modern software is built on open source projects. In fact, you can trace almost any production system today, including AI, mobile, cloud, and embedded workloads, back to open source components. These components are the invisible infrastructure of software: the download that always works, the library you never question, the build step you haven&rsquo;t thought about in years, if ever.</p>
+
+
+
+<p>A few examples:</p>
+
+
+
+<ul class="wp-block-list">
+<li><strong>curl</strong> moves data for billions of systems, from package managers to CI pipelines.</li>
+
+
+
+<li><strong>Python</strong>, <strong>pandas</strong>, and <strong>SciPy</strong> sit underneath everything from LLM research to ETL workflows and model evaluation.</li>
+
+
+
+<li><strong>Node.js</strong>, <strong>LLVM</strong>, and <strong>Jenkins</strong> shape how software is compiled, tested, and shipped across industries.</li>
+</ul>
+
+
+
+<p>When these projects are secure, teams can adopt automation, AI&#8209;enhanced tooling, and faster release cycles without adding risk or slow down development. When they aren&rsquo;t, the blast radius crosses project boundaries, propagating through registries, clouds, transitive dependencies, and production systems, including AI systems, that react far faster than traditional workflows.</p>
+
+
+
+<p>Securing this layer is not only about preventing incidents; it&rsquo;s about giving developers confidence that the systems they depend on&mdash;whether for model training, CI/CD, or core runtime behavior&mdash;are operating on hardened, trustworthy foundations. Open source is shared industrial infrastructure that deserves real investment and measurable outcomes.</p>
+
+
+
+<p><strong>That is the mission of the </strong><a href="https://github.com/open-source/github-secure-open-source-fund"><strong>GitHub Secure Open Source Fund</strong></a><strong>: to secure open source projects that underpin the digital supply chain, catalyze innovation, and are critical to the modern AI stack.&nbsp;</strong></p>
+
+
+
+<p><strong>We do this by directly linking funding to verified security outcomes</strong> and by giving maintainers resources, hands&#8209;on security training, and a security community where they can raise their highest&#8209;risk concerns and get expert feedback.&nbsp;</p>
+
+
+
+<h2 class="wp-block-heading" id="h-why-securing-critical-open-source-projects-matters-nbsp">Why securing critical open source projects matters&nbsp;</h2>
+
+
+
+<p>A single production service can depend on hundreds or even thousands of transitive dependencies. <a href="https://github.blog/open-source/inside-the-breach-that-broke-the-internet-the-untold-story-of-log4shell/">As Log4Shell demonstrated</a>, when one widely used project is compromised, the impact is rarely confined to a single application or company.</p>
+
+
+
+<p><strong>Investing in the security of widely used open source projects does three things at once:</strong></p>
+
+
+
+<ul class="wp-block-list">
+<li>It reinforces that security is a baseline requirement for modern software, not optional labor.</li>
+
+
+
+<li>It gives maintainers time, resources, and support to perform proactive security work.</li>
+
+
+
+<li>It reduces systemic risk across the global software supply chain.</li>
+</ul>
+
+
+
+<p>This security work benefits everyone who writes, ships, or operates code, even if they never interact directly with the projects involved. That gap is exactly what the GitHub Secure Open Source Fund was built to close. <a href="https://github.blog/open-source/maintainers/securing-the-supply-chain-at-scale-starting-with-71-important-open-source-projects/" target="_blank" rel="noreferrer noopener">In Session 1 &amp; 2, 71 projects made significant security improvements</a>. In Session 3, 67 open source projects delivered concrete security improvements to reduce systemic risk across the software supply chain.</p>
+
+
+
+<aside data-color-mode="light" data-dark-theme="dark" data-light-theme="light_dimmed" class="wp-block-group post-aside--large p-4 p-md-6 is-style-light-dimmed has-global-padding is-layout-constrained wp-block-group-is-layout-constrained is-style-light-dimmed--5" style="border-top-width:4px">
+<h2 class="wp-block-heading h5-mktg gh-aside-title is-typography-preset-h5" id="h-how-the-github-secure-open-source-fund-works" style="margin-top:0">How the GitHub Secure Open Source Fund works</h2>
+
+
+
+<p>Each session is a three-week sprint and engagement for a total of 12 months. Funding and participation are tied directly to outcome&#8209;driven goals and verified security improvements.</p>
+
+
+
+<p>The sprint is designed and curated by the <a href="https://securitylab.github.com/"><strong>GitHub Security Lab</strong></a><strong>, </strong>and delivered by security experts from GitHub and our partners. The training is structured into different focus areas per week.&nbsp;</p>
+
+
+
+<p>These include:&nbsp;</p>
+
+
+
+<ul class="wp-block-list">
+<li>Foundations of open source security</li>
+
+
+
+<li>Threat modeling and secure coding</li>
+
+
+
+<li>AI security and vulnerability management</li>
+</ul>
+
+
+
+<p>Throughout this program, each project receives $10,000 USD via <a href="https://github.com/sponsors">GitHub Sponsors</a> (which breaks down to $6,000 USD during the sprint and $2,000 USD at 6- and 12-month security check-ins). Projects are invited to a new security-focused community and office hours with the <a href="https://securitylab.github.com/">GitHub Security Lab</a>, which they can take advantage of during the full 12 months. They also receive security resources to immediately implement in their project and <a href="https://azure.microsoft.com/en-us">Azure</a> credits for cloud infrastructure.</p>
+
+
+
+<p><a href="https://resources.github.com/github-secure-open-source-fund/">Learn more &gt;</a></p>
+</aside>
+
+
+
+<hr class="wp-block-separator has-alpha-channel-opacity">
+
+
+
+<h2 class="wp-block-heading" id="session-3-by-the-numbers">Session 3, by the numbers</h2>
+
+
+
+<ul class="wp-block-list">
+<li><strong>67</strong> projects</li>
+
+
+
+<li><strong>98</strong> maintainers</li>
+
+
+
+<li><strong>$670,000</strong> in non-dilutive funding powered by <a href="https://github.com/open-source/sponsors">GitHub Sponsors</a></li>
+
+
+
+<li><strong>99%</strong> of projects completed the program with core GitHub security features enabled</li>
+</ul>
+
+
+
+<p><strong>Real security results across all sessions:</strong></p>
+
+
+
+<ul class="wp-block-list">
+<li><strong>138</strong> projects</li>
+
+
+
+<li><strong>219</strong> maintainers</li>
+
+
+
+<li><strong>38</strong> countries represented by participating projects</li>
+
+
+
+<li><strong>$1.38M</strong> in non-dilutive funding powered by <a href="https://github.com/open-source/sponsors">GitHub Sponsors</a></li>
+
+
+
+<li><strong>191</strong> new <a href="https://github.blog/security/supply-chain-security/securing-the-open-source-supply-chain-the-essential-role-of-cves/">CVEs</a> Issued</li>
+
+
+
+<li><strong>250+</strong> new secrets prevented from being leaked</li>
+
+
+
+<li><strong>600+</strong> leaked secrets were detected and resolved</li>
+
+
+
+<li><strong>Billions</strong> of monthly downloads powered by alumni projects</li>
+</ul>
+
+
+
+<p><strong>Plus, in just the last 6 months</strong>:</p>
+
+
+
+<ul class="wp-block-list">
+<li><strong>500+</strong> <a href="https://docs.github.com/en/code-security/concepts/code-scanning/codeql/about-code-scanning-with-codeql">CodeQL</a> alerts fixed</li>
+
+
+
+<li><strong>66</strong> secrets blocked</li>
+</ul>
+
+
+
+<hr class="wp-block-separator has-alpha-channel-opacity">
+
+
+
+<h2 class="wp-block-heading" id="where-security-work-happened-in-session-3">Where security work happened in Session 3</h2>
+
+
+
+<p>Session 3 focused on improving security across the systems developers rely on every day. The projects below are grouped by the role they play in the software ecosystem.</p>
+
+
+
+<h2 class="wp-block-heading" id="core-programming-languages-and-runtimes-%f0%9f%a4%96">Core programming languages and runtimes &#129302;</h2>
+
+
+
+<p><em><a href="https://github.com/python/cpython">CPython</a> <em>&bull;&nbsp;<a href="https://github.com/himmelblau-idm/himmelblau">Himmelblau</a></em></em> <em>&bull;&nbsp;<em><a href="https://github.com/llvm/llvm-project">LLVM</a> &bull;</em></em> <em><a href="https://github.com/nodejs/web-team">Node.js</a> &bull;&nbsp;<a href="https://github.com/rustls/rustls">Rustls</a></em></p>
+
+
+
+<p>These projects define how software is written and executed. Improvements here flow downstream to entire ecosystems.</p>
+
+
+
+<p>This group includes CPython, Node.js, LLVM, Rustls, and related tooling that shapes compilation, execution, and cryptography at scale.</p>
+
+
+
+<figure class="wp-block-image size-large"><img data-recalc-dims="1" loading="lazy" decoding="async" height="538" width="1024" src="https://github.blog/wp-content/uploads/2026/02/node.jpg?resize=1024%2C538" alt="Quote from Node: GitHub SOSF trailblazed critical security knowledge for Open Source in the AI era." class="wp-image-93835" srcset="https://github.blog/wp-content/uploads/2026/02/node.jpg?w=2400 2400w, https://github.blog/wp-content/uploads/2026/02/node.jpg?w=300 300w, https://github.blog/wp-content/uploads/2026/02/node.jpg?w=768 768w, https://github.blog/wp-content/uploads/2026/02/node.jpg?w=1024 1024w, https://github.blog/wp-content/uploads/2026/02/node.jpg?w=1536 1536w, https://github.blog/wp-content/uploads/2026/02/node.jpg?w=2048 2048w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<p>For example, improvements to CPython directly benefit millions of developers who rely on Python for application development, automation, and AI workloads. LLVM maintainers identified security improvements that complement existing investments and reduce risk across toolchains used throughout the industry.</p>
+
+
+
+<p>When language runtimes improve their security posture, everything built on top of them inherits that resilience.</p>
+
+
+
+<figure class="wp-block-image size-large"><img data-recalc-dims="1" loading="lazy" decoding="async" height="538" width="1024" src="https://github.blog/wp-content/uploads/2026/02/python.jpg?resize=1024%2C538" alt="Python quote: This program made it possible to enhance Python's security, directly benefitting millions of developers." class="wp-image-93836" srcset="https://github.blog/wp-content/uploads/2026/02/python.jpg?w=2400 2400w, https://github.blog/wp-content/uploads/2026/02/python.jpg?w=300 300w, https://github.blog/wp-content/uploads/2026/02/python.jpg?w=768 768w, https://github.blog/wp-content/uploads/2026/02/python.jpg?w=1024 1024w, https://github.blog/wp-content/uploads/2026/02/python.jpg?w=1536 1536w, https://github.blog/wp-content/uploads/2026/02/python.jpg?w=2048 2048w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<h2 class="wp-block-heading" id="web-networking-and-core-infrastructure-libraries-%f0%9f%93%9a">Web, networking, and core infrastructure libraries &#128218;</h2>
+
+
+
+<p><span><a style="font-style: italic;" href="https://github.com/apache/apisix">Apache APISIX</a><i>&bull; </i><a style="font-style: italic;" href="https://github.com/curl">curl</a><em style="font-style: italic;">&bull; <a href="https://github.com/evcc-io/evcc">evcc</a> </em><i>&bull; </i><a style="font-style: italic;" href="https://github.com/kgateway-dev/kgateway">kgateway</a><i>&bull; </i><a style="font-style: italic;" href="https://github.com/netty/netty">Netty</a><i>&bull; </i><a style="font-style: italic;" href="https://github.com/quic-go/quic-go">quic-go</a></span><em>&bull; <a href="https://github.com/urllib3/urllib3">urllib3</a> <em>&bull;</em></em> <em><a href="https://github.com/vapor/vapor">Vapor</a></em></p>
+
+
+
+<p>These projects form the connective tissue of the internet. They handle HTTP, TLS, APIs, and network communication that nearly every application depends on.</p>
+
+
+
+<p>This group includes curl, urllib3, Netty, Apache APISIX, quic-go, and related libraries that sit on the hot path of modern software.</p>
+
+
+
+<figure class="wp-block-image size-large"><img data-recalc-dims="1" loading="lazy" decoding="async" height="538" width="1024" src="https://github.blog/wp-content/uploads/2026/02/curl.jpg?resize=1024%2C538" alt="Quote from curl: The program brings together security best practices in a concise, actionable form to give us assurance we're on the right track." class="wp-image-93837" srcset="https://github.blog/wp-content/uploads/2026/02/curl.jpg?w=2400 2400w, https://github.blog/wp-content/uploads/2026/02/curl.jpg?w=300 300w, https://github.blog/wp-content/uploads/2026/02/curl.jpg?w=768 768w, https://github.blog/wp-content/uploads/2026/02/curl.jpg?w=1024 1024w, https://github.blog/wp-content/uploads/2026/02/curl.jpg?w=1536 1536w, https://github.blog/wp-content/uploads/2026/02/curl.jpg?w=2048 2048w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<h2 class="wp-block-heading" id="build-systems-ci-cd-and-release-tooling-%f0%9f%a7%b0">Build systems, CI/CD, and release tooling &#129520;</h2>
+
+
+
+<p><em><a href="https://github.com/apache/airflow/">Apache Airflow</a> &bull; <a href="https://github.com/babel/babel">Babel</a> <i>&bull;</i> <a href="https://github.com/foundry-rs/foundry">Foundry</a> &bull; <a href="https://github.com/GitoxideLabs/gitoxide">Gitoxide</a> &bull; <a href="https://github.com/goreleaser/goreleaser">GoReleaser</a> &bull; <a href="https://github.com/jenkinsci/jenkins">Jenkins</a> &bull; <a href="https://github.com/jupyter/docker-stacks">Jupyter Docker Stacks</a> <i>&bull;</i> <a href="https://github.com/isaacs/node-lru-cache">node-lru-cache</a> &bull; <a href="https://github.com/oapi-codegen/oapi-codegen/">oapi-codegen</a> <i>&bull;</i> <a href="https://github.com/pypi/warehouse">PyPI / Warehouse</a> &bull; <a href="https://github.com/isaacs/rimraf">rimraf</a>&nbsp; &bull; <a href="https://github.com/webpack/webpack">webpack</a></em></p>
+
+
+
+<p>Compromising build tooling compromises the entire supply chain. These projects influence how software is built, tested, packaged, and shipped.</p>
+
+
+
+<p>Session 3 included projects such as Jenkins, Apache Airflow, GoReleaser, PyPI Warehouse, webpack, and related automation and release infrastructure.</p>
+
+
+
+<p>Maintainers in this category focused on securing workflows that often run with elevated privileges and broad access. Improvements here help prevent tampering before software ever reaches users.</p>
+
+
+
+<figure class="wp-block-image size-large"><img data-recalc-dims="1" loading="lazy" decoding="async" height="538" width="1024" src="https://github.blog/wp-content/uploads/2026/02/webpack.jpg?resize=1024%2C538" alt="Quote from Webpack: We've greatly enhanced our security to protect web applications against threats." class="wp-image-93850" srcset="https://github.blog/wp-content/uploads/2026/02/webpack.jpg?w=2400 2400w, https://github.blog/wp-content/uploads/2026/02/webpack.jpg?w=300 300w, https://github.blog/wp-content/uploads/2026/02/webpack.jpg?w=768 768w, https://github.blog/wp-content/uploads/2026/02/webpack.jpg?w=1024 1024w, https://github.blog/wp-content/uploads/2026/02/webpack.jpg?w=1536 1536w, https://github.blog/wp-content/uploads/2026/02/webpack.jpg?w=2048 2048w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<h2 class="wp-block-heading" id="data-science-scientific-computing-and-ai-foundations-%f0%9f%93%8a">Data science, scientific computing, and AI foundations &#128202;</h2>
+
+
+
+<p><em><a href="https://github.com/aipotheosis-labs/aci">ACI.dev</a> &bull; <a href="https://github.com/arviz-devs/arviz">ArviZ</a> &bull; <a href="https://github.com/cocoindex-io/cocoindex">CocoIndex</a> &bull; <a href="https://github.com/OpenBB-finance/OpenBB">OpenBB Platform</a> &bull; <a href="https://github.com/open-metadata/OpenMetadata">OpenMetadata</a> <i>&bull;</i> <a href="https://github.com/opensearch-project/OpenSearch/">OpenSearch</a> &bull; <a href="https://github.com/pandas-dev/pandas">pandas</a> &bull; <a href="https://github.com/pymc-devs/pymc">PyMC</a> &bull; <a href="https://github.com/scipy/scipy">SciPy</a> &bull; <a href="https://github.com/traceroot-ai/traceroot">TraceRoot</a></em></p>
+
+
+
+<p>These projects sit at the core of modern data analysis, research, and AI development. They are increasingly embedded in production systems as well as research pipelines.</p>
+
+
+
+<p>Projects such as pandas, SciPy, PyMC, ArviZ, and OpenSearch participated in Session 3. Maintainers expanded security coverage across large and complex codebases, often moving from limited scanning to continuous checks on every commit and release.</p>
+
+
+
+<p>Many of these projects also engaged deeply with AI-related security topics, reflecting their growing role in AI workflows.</p>
+
+
+
+<figure class="wp-block-image size-large"><img data-recalc-dims="1" loading="lazy" decoding="async" height="538" width="1024" src="https://github.blog/wp-content/uploads/2026/02/scipy.jpg?resize=1024%2C538" alt="Quote from SciPy: The program took us from 0 to security scans on every line of code, on every commit, and on every release." class="wp-image-93851" srcset="https://github.blog/wp-content/uploads/2026/02/scipy.jpg?w=2400 2400w, https://github.blog/wp-content/uploads/2026/02/scipy.jpg?w=300 300w, https://github.blog/wp-content/uploads/2026/02/scipy.jpg?w=768 768w, https://github.blog/wp-content/uploads/2026/02/scipy.jpg?w=1024 1024w, https://github.blog/wp-content/uploads/2026/02/scipy.jpg?w=1536 1536w, https://github.blog/wp-content/uploads/2026/02/scipy.jpg?w=2048 2048w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<h2 class="wp-block-heading" id="developer-tools-and-productivity-utilities-%e2%9a%92%ef%b8%8f">Developer tools and productivity utilities &#9874;&#65039;</h2>
+
+
+
+<p><em><a href="https://github.com/assertj">AssertJ</a> <i>&bull;</i> <a href="https://github.com/ArduPilot/ardupilot">ArduPilot</a> <i>&bull;</i> <a href="https://github.com/asyncapi">AsyncAPI Initiative</a> <i>&bull;</i> </em><a style="font-style: italic;" href="https://github.com/bevyengine/bevy">Bevy</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/kovidgoyal/calibre">calibre</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/egovernments/DIGIT-Core">DIGIT</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/fabricjs/fabric.js">fabric.js</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/ImageMagick/ImageMagick">ImageMagick</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/jquery/jquery">jQuery</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/jhy/jsoup">jsoup</a><i> &bull; </i><a style="font-style: italic;" href="https://calendly.com/url?q=https%3A%2F%2Fgithub.com%2Fmastodon%2Fmastodon&amp;user_uuid=eb42a9fd-194f-445e-8b77-06fff52eef85&amp;stage=1&amp;hmac=3ebce412277377ef09bb3c38d5988ed6df3f03eb4939afc723454b25f7a39daf">Mastodon</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/mermaid-js/mermaid">Mermaid</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/mockoon/mockoon">Mockoon</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/processing/p5.js">p5.js</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/fabiocaccamo/python-benedict">python-benedict</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/kriasoft/react-starter-kit">React Starter Kit</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/SeleniumHQ/selenium">Selenium</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/sphinx-doc/sphinx">Sphinx</a><i>&bull; </i><a style="font-style: italic;" href="https://github.com/spyder-ide/spyder">Spyder</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/kevinburke/ssh_config">ssh_config</a><i>&bull; </i><a style="font-style: italic;" href="https://github.com/thunderbird/thunderbird-android/">Thunderbird for Android</a><i> &bull; </i><a style="font-style: italic;" href="https://github.com/jonobr1/two.js">Two.js</a> &bull; <em><a href="https://github.com/xyflow/xyflow">xyflow</a></em> &bull; <em><a href="https://github.com/yiisoft">Yii framework</a></em></p>
+
+
+
+<p>These projects shape the day-to-day experience of writing, testing, and maintaining software.</p>
+
+
+
+<p>The group includes tools such as Selenium, Sphinx, ImageMagick, calibre, Spyder, and other widely used utilities that appear throughout development and testing environments.</p>
+
+
+
+<p>Improving security here reduces the risk that developer tooling becomes an unexpected attack vector, especially in automated or shared environments.</p>
+
+
+
+<figure class="wp-block-image size-large"><img data-recalc-dims="1" loading="lazy" decoding="async" height="538" width="1024" src="https://github.blog/wp-content/uploads/2026/02/mermaid.jpg?resize=1024%2C538" alt="Quote from Mermaid: We're not just well equipped for security; we're equipped to lift others up with the same knowledge." class="wp-image-93852" srcset="https://github.blog/wp-content/uploads/2026/02/mermaid.jpg?w=2400 2400w, https://github.blog/wp-content/uploads/2026/02/mermaid.jpg?w=300 300w, https://github.blog/wp-content/uploads/2026/02/mermaid.jpg?w=768 768w, https://github.blog/wp-content/uploads/2026/02/mermaid.jpg?w=1024 1024w, https://github.blog/wp-content/uploads/2026/02/mermaid.jpg?w=1536 1536w, https://github.blog/wp-content/uploads/2026/02/mermaid.jpg?w=2048 2048w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<h2 class="wp-block-heading" id="identity-secrets-and-security-frameworks-%f0%9f%94%92">Identity, secrets, and security frameworks &#128274;</h2>
+
+
+
+<p><em><a href="https://github.com/external-secrets/external-secrets">external-secrets</a> &bull; <a href="https://github.com/helmetjs/helmet">Helmet.js</a> &bull; <a href="https://github.com/keycloak/keycloak">Keycloak</a> &bull; <a href="https://github.com/keyshade-xyz/keyshade">Keyshade</a> &bull; <a href="https://github.com/ruby-oauth/oauth2">Oauth2 (Ruby)</a> &bull; <a href="https://github.com/dmno-dev/varlock">varlock</a> &bull; <a href="https://github.com/go-webauthn/webauthn">WebAuthn (Go)</a></em></p>
+
+
+
+<p>These projects form the backbone of authentication, authorization, secrets management, and secure configuration.</p>
+
+
+
+<p>Session 3 participants included projects such as Keycloak, external-secrets, oauth2 libraries, WebAuthn tooling, and related security frameworks.</p>
+
+
+
+<p>Maintainers in this group often reported shifting from reactive fixes to systematic threat modeling and long-term security planning, improving trust for every system that depends on them.</p>
+
+
+
+<figure class="wp-block-image size-large"><img data-recalc-dims="1" loading="lazy" decoding="async" height="538" width="1024" src="https://github.blog/wp-content/uploads/2026/02/keyshade.jpg?resize=1024%2C538" alt="Quote from Keyshade: The GitHub SOSF was invaluable, helping us strengthen our security approach and making us more confident and effective organization-wide." class="wp-image-93853" srcset="https://github.blog/wp-content/uploads/2026/02/keyshade.jpg?w=2400 2400w, https://github.blog/wp-content/uploads/2026/02/keyshade.jpg?w=300 300w, https://github.blog/wp-content/uploads/2026/02/keyshade.jpg?w=768 768w, https://github.blog/wp-content/uploads/2026/02/keyshade.jpg?w=1024 1024w, https://github.blog/wp-content/uploads/2026/02/keyshade.jpg?w=1536 1536w, https://github.blog/wp-content/uploads/2026/02/keyshade.jpg?w=2048 2048w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<aside data-color-mode="light" data-dark-theme="dark" data-light-theme="light_dimmed" class="wp-block-group post-aside--large p-4 p-md-6 is-style-light-dimmed has-global-padding is-layout-constrained wp-block-group-is-layout-constrained is-style-light-dimmed--6" style="border-top-width:4px">
+<h2 class="wp-block-heading h5-mktg gh-aside-title is-typography-preset-h5" id="h-ai-security-as-a-shared-frontier" style="margin-top:0">AI security as a shared frontier</h2>
+
+
+
+<p>Across all categories, one signal stood out. AI-related security modules produced the largest self-reported increase in security understanding of any topic in Session 3.</p>
+
+
+
+<p>While AI security is not solved, it is being actively shaped by the open source community in the open.</p>
+</aside>
+
+
+
+<figure class="wp-block-image size-large"><img data-recalc-dims="1" loading="lazy" decoding="async" height="538" width="1024" src="https://github.blog/wp-content/uploads/2026/02/selenium.jpg?resize=1024%2C538" alt="" class="wp-image-93854" srcset="https://github.blog/wp-content/uploads/2026/02/selenium.jpg?w=2400 2400w, https://github.blog/wp-content/uploads/2026/02/selenium.jpg?w=300 300w, https://github.blog/wp-content/uploads/2026/02/selenium.jpg?w=768 768w, https://github.blog/wp-content/uploads/2026/02/selenium.jpg?w=1024 1024w, https://github.blog/wp-content/uploads/2026/02/selenium.jpg?w=1536 1536w, https://github.blog/wp-content/uploads/2026/02/selenium.jpg?w=2048 2048w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<h2 class="wp-block-heading" id="security-as-shared-infrastructure">Security as shared infrastructure</h2>
+
+
+
+<p>One of the most durable outcomes of the program was a shift in mindset.</p>
+
+
+
+<p>Maintainers moved security from a stretch goal to a core requirement. They shifted from reactive patching to proactive design, and from isolated work to shared practice. Many are now publishing playbooks, sharing incident response exercises, and passing lessons on to their contributor communities.</p>
+
+
+
+<p>That is how security scales: one-to-many.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-what-s-next-help-us-make-open-source-more-secure-nbsp">What&rsquo;s next: Help us make open source more secure&nbsp;</h2>
+
+
+
+<p>Securing open source is basic maintenance for the internet. By giving 67 heavily used projects real funding, three focused weeks, and direct help, we watched maintainers ship fixes that now protect millions of builds a day. This training, taught by the <a href="https://securitylab.github.com/">GitHub Security Lab</a> and top cybersecurity experts, allows us to go beyond one-on-one education and enable one-to-many impact.&nbsp;</p>
+
+
+
+<p>For example, many maintainers are working to make their playbooks public. The incident-response plans they rehearsed are forkable. The signed releases they now ship flow downstream to every package manager and CI pipeline that depends on them.</p>
+
+
+
+<p><strong>Join us in this mission to secure the software supply chain at scale.&nbsp;</strong></p>
+
+
+
+<ul class="wp-block-list">
+<li><strong>Projects and maintainers:</strong> <a href="https://github.com/open-source/github-secure-open-source-fund">Apply now</a> to the GitHub Secure Open Source Fund and help make open source safer for everyone. Session 4 begins April 2026. If you write code, rely on open source, or want the systems you depend on to remain trustworthy, we encourage you to apply.</li>
+
+
+
+<li><strong>Funding and Ecosystem Partners</strong>: <a href="https://forms.office.com/pages/responsepage.aspx?id=v4j5cvGGr0GRqy180BHbR72dY7PBsFZJkFTETCg9J0xUOEVXVzFKUjk1M0ZaWFVZSTdZMU85MkRPSi4u&amp;route=shorturl">Become a Funding or Ecosystem Partner</a> and support a more secure open source future. Join us on this mission to secure the software supply chain at scale!</li>
+</ul>
+
+
+
+<h3 class="wp-block-heading" id="h-thank-you-to-all-of-our-partners">Thank you to all of our partners</h3>
+
+
+
+<p>We couldn&rsquo;t do this without our incredible network of partners. Together, we are helping secure the open source ecosystem for everyone!&nbsp;</p>
+
+
+
+<p><strong>Funding Partners:</strong> Alfred P. Sloan Foundation, American Express, Chainguard, Datadog, Herodevs, Kraken, Mayfield, Microsoft, Shopify, Stripe, Superbloom, Vercel, Zerodha, 1Password</p>
+
+
+
+<figure class="wp-block-image size-large"><img data-recalc-dims="1" loading="lazy" decoding="async" height="538" width="1024" src="https://github.blog/wp-content/uploads/2026/02/header.jpg?resize=1024%2C538" alt="A decorative image showing GitHub Secure Open Source Fund, powered by GitHub Sponsors. Logos below are: Alfred P. Sloan Foundation, American Express, chainguard, Datadog, herdevs, Kraken, Microsoft, Mayfield, Shopify, stripe, superbloom, Vercel, 1Password, Zerodha" class="wp-image-93832" srcset="https://github.blog/wp-content/uploads/2026/02/header.jpg?w=2400 2400w, https://github.blog/wp-content/uploads/2026/02/header.jpg?w=300 300w, https://github.blog/wp-content/uploads/2026/02/header.jpg?w=768 768w, https://github.blog/wp-content/uploads/2026/02/header.jpg?w=1024 1024w, https://github.blog/wp-content/uploads/2026/02/header.jpg?w=1536 1536w, https://github.blog/wp-content/uploads/2026/02/header.jpg?w=2048 2048w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<p><strong>Ecosystem Partners: </strong>Atlantic Council, Ecosyste.ms, CURIOSS, Digital Data Design Institute Lab for Innovation Science, Digital Infrastructure Insights Fund, Microsoft for Startups, Mozilla, OpenForum Europe, Open Source Collective, OpenUK, Open Technology Fund, OpenSSF, Open Source Initiative, OpenJS Foundation, University of California, OWASP, Santa Cruz OSPO, Sovereign Tech Agency, SustainOSS</p>
+
+
+
+<figure class="wp-block-image size-full"><img data-recalc-dims="1" loading="lazy" decoding="async" width="5760" height="1844" src="https://github.blog/wp-content/uploads/2026/02/ecosystem.png?resize=5760%2C1844" alt="A collage of ecosystem partners: OWASP, ecosyste.ms, curioss, Digital Data Design Institute, Digital Infrastructure Insights Fund, Mozilla, Open Forum Europe, Open Source Collective, Open UK, Microsoft for Startups, Open SSF, Open Source Initiative, Open JS Foundation, OSPO, Open Technology Fund, URA, Sovereign Tech Agency, Sustain, and Atlantic Council." class="wp-image-93901" srcset="https://github.blog/wp-content/uploads/2026/02/ecosystem.png?w=5760 5760w, https://github.blog/wp-content/uploads/2026/02/ecosystem.png?w=300 300w, https://github.blog/wp-content/uploads/2026/02/ecosystem.png?w=768 768w, https://github.blog/wp-content/uploads/2026/02/ecosystem.png?w=1024 1024w, https://github.blog/wp-content/uploads/2026/02/ecosystem.png?w=1536 1536w, https://github.blog/wp-content/uploads/2026/02/ecosystem.png?w=2048 2048w, https://github.blog/wp-content/uploads/2026/02/ecosystem.png?w=3000 3000w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+</body></html>
+<p>The post <a href="https://github.blog/open-source/maintainers/securing-the-ai-software-supply-chain-security-results-across-67-open-source-projects/">Securing the AI software supply chain: Security results across 67 open source projects</a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></content>
+		
+			</entry>
+		<entry>
+		<author>
+			<name>Don Syme</name>
+					</author>
+
+		<title type="html"><![CDATA[Automate repository tasks with GitHub Agentic Workflows  ]]></title>
+		<link rel="alternate" type="text/html" href="https://github.blog/ai-and-ml/automate-repository-tasks-with-github-agentic-workflows/" />
+
+		<id>https://github.blog/?p=93730</id>
+		<updated>2026-02-13T00:02:08Z</updated>
+		<published>2026-02-13T14:00:00Z</published>
+		<category scheme="https://github.blog/" term="AI &amp; ML" /><category scheme="https://github.blog/" term="Automation" /><category scheme="https://github.blog/" term="DevOps" /><category scheme="https://github.blog/" term="Enterprise software" /><category scheme="https://github.blog/" term="Generative AI" /><category scheme="https://github.blog/" term="GitHub Copilot" /><category scheme="https://github.blog/" term="LLMs" /><category scheme="https://github.blog/" term="Machine learning" /><category scheme="https://github.blog/" term="agentic workflows" /><category scheme="https://github.blog/" term="AI agents" /><category scheme="https://github.blog/" term="automation" /><category scheme="https://github.blog/" term="continuous integration" /><category scheme="https://github.blog/" term="developer productivity" /><category scheme="https://github.blog/" term="GitHub Actions" /><category scheme="https://github.blog/" term="GitHub Next" />
+		<summary type="html"><![CDATA[<p>Discover GitHub Agentic Workflows, now in technical preview. Build automations using coding agents in GitHub Actions to handle triage, documentation, code quality, and more.</p>
+<p>The post <a href="https://github.blog/ai-and-ml/automate-repository-tasks-with-github-agentic-workflows/">Automate repository tasks with GitHub Agentic Workflows  </a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></summary>
+
+					<content type="html" xml:base="https://github.blog/ai-and-ml/automate-repository-tasks-with-github-agentic-workflows/"><![CDATA[<!DOCTYPE html PUBLIC "-//W3C//DTD HTML 4.0 Transitional//EN" "http://www.w3.org/TR/REC-html40/loose.dtd">
+<html><body><p>Imagine visiting your repository in the morning and feeling calm because you see:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Issues triaged and labelled</li>
+
+
+
+<li>CI failures investigated with proposed fixes</li>
+
+
+
+<li>Documentation has been updated to reflect recent code changes.</li>
+
+
+
+<li>Two new pull requests that improve testing await your review.</li>
+</ul>
+
+
+
+<p>All of it visible, inspectable, and operating within the boundaries you&rsquo;ve defined.</p>
+
+
+
+<p>That&rsquo;s the future powered by <a href="https://github.github.com/gh-aw/?utm_source=blog-agentic-workflows-cta&amp;utm_medium=blog&amp;utm_campaign=agentic-workflows-tech-preview-feb-2026" target="_blank" rel="noreferrer noopener">GitHub Agentic Workflows</a>: automated, intent-driven repository workflows that run in GitHub Actions, authored in plain Markdown and executed with coding agents. They&rsquo;re designed for people working in GitHub, from individuals automating a single repo to teams operating at enterprise or open-source scale.</p>
+
+
+
+<p>At GitHub Next, we began GitHub Agentic Workflows as an investigation into a simple question: what does repository automation with strong guardrails look like in the era of AI coding agents? A natural place to start was GitHub Actions, the heart of scalable repository automation on GitHub. By bringing automated coding agents into actions, we can enable their use across millions of repositories, while keeping decisions about when and where to use them in your hands.</p>
+
+
+
+<p>GitHub Agentic Workflows are now available in <a href="https://github.github.com/gh-aw/?utm_source=blog-agentic-workflows-cta&amp;utm_medium=blog&amp;utm_campaign=agentic-workflows-tech-preview-feb-2026" target="_blank" rel="noreferrer noopener">technical preview</a>. In this post, we&rsquo;ll explain what they are and how they work. We invite you to put them to the test, to explore where repository-level AI automation delivers the most value.</p>
+
+
+
+<picture>
+  <source media="(min-width: 768px)" srcset="https://github.blog/wp-content/uploads/2026/02/Quotes_Option1.jpg">
+  <source media="(max-width: 767px)" srcset="https://github.blog/wp-content/uploads/2026/02/Quotes_Option2.jpg">
+  <img decoding="async" src="https://github.blog/wp-content/uploads/2026/02/Quotes_Option1.jpg" alt="Graphic showing quotes from customers. 'Home Assistant has thousands of open issues. No human can track what's trending or which problems affect the most users. I've built GitHub Agentic Workflows that analyze issues and surface what matters: that's the kind of judgment amplification that actually helps maintainers.'- Franck Nijhof, lead of the Home Assistant project, one of the top projects on GitHubby contributor countAgentic workflows also allow maintainers and community to experiment with repository automation together. 'Adopting GitHub&rsquo;s Agentic Workflows has lowered the barrier for experimentation with AI tooling, making it significantly easier for staff, maintainers and newcomers alike. Inside of CNCF, we are benefiting from improved documentation automation along with improving team reporting across the organization. This isn't just a technical upgrade for our community, it&rsquo;s part of a cultural shift that empowers our ecosystem to innovate faster with AI and agentic tooling.'- Chris Aniszczyk, CTO of the Cloud Native Computing Foundation (CNCF), whose mission is to make cloud native computing ubiquitous across the worldEnterprises are seeing similar benefits at scale. 'With GitHub Agentic Workflows, we&rsquo;re able to expand how we apply agents to real engineering work at scale, including changes that span multiple repositories. The flexibility and built-in controls give us confidence to leverage Agentic Workflows across complex systems at Carvana.'- Alex Devkar, Senior Vice President, Engineering and Analytics, at Carvana" style="width: 100%; height: auto; display: block;">
+</source></source></picture>
+
+
+
+<h2 class="wp-block-heading" id="h-ai-repository-automation-nbsp-a-nbsp-revolution-through-simplicity-nbsp">AI repository automation:&nbsp;A&nbsp;revolution through simplicity&nbsp;</h2>
+
+
+
+<p>The concept behind GitHub Agentic Workflows is straightforward: you describe the outcomes you want in plain Markdown, add this as an automated workflow to your repository, and it executes using a coding agent in GitHub Actions.</p>
+
+
+
+<p>This brings the power of coding agents into the heart of repository automation. Agentic workflows run as standard GitHub Actions workflows, with added guardrails for sandboxing, permissions, control, and review. When they execute, they can use different coding agent engines&mdash;such as Copilot CLI, Claude Code, or OpenAI Codex&mdash;depending on your configuration.</p>
+
+
+
+<p>The use of GitHub Agentic Workflows makes entirely new categories of repository automation and software engineering possible, in a way that fits naturally with how developer teams already work on GitHub. All of them would be difficult or impossible to accomplish traditional YAML workflows alone:</p>
+
+
+
+<ol start="1" class="wp-block-list">
+<li><strong>Continuous triage</strong>: automatically&nbsp;<a href="https://github.github.com/gh-aw/blog/2026-01-13-meet-the-workflows/" target="_blank" rel="noreferrer noopener">summarize, label, and route new issues</a>.</li>
+
+
+
+<li><strong>Continuous documentation</strong>: keep&nbsp;<a href="https://github.github.com/gh-aw/blog/2026-01-13-meet-the-workflows-documentation/" target="_blank" rel="noreferrer noopener">READMEs and documentation aligned with code changes</a>.</li>
+
+
+
+<li><strong>Continuous code simplification</strong>:&nbsp;<a href="https://github.github.com/gh-aw/blog/2026-01-13-meet-the-workflows-continuous-simplicity/" target="_blank" rel="noreferrer noopener">repeatedly identify code improvements</a>&nbsp;and open&nbsp;pull requests for them.</li>
+
+
+
+<li><strong>Continuous test improvement</strong>:&nbsp;<a href="https://github.github.com/gh-aw/blog/2026-01-13-meet-the-workflows-testing-validation/" target="_blank" rel="noreferrer noopener">assess test&nbsp;coverage and add high-value tests</a>.</li>
+
+
+
+<li><strong>Continuous quality hygiene</strong>: proactively&nbsp;<a href="https://github.github.com/gh-aw/blog/2026-01-13-meet-the-workflows-quality-hygiene/" target="_blank" rel="noreferrer noopener">investigate CI failures and propose targeted fixes</a>.</li>
+
+
+
+<li><strong>Continuous reporting</strong>:&nbsp;<a href="https://github.github.com/gh-aw/blog/2026-01-13-meet-the-workflows-metrics-analytics/" target="_blank" rel="noreferrer noopener">create regular reports on repository health, activity, and trends</a>.</li>
+</ol>
+
+
+
+<p>These are just a few examples of repository automations that showcase the power of GitHub Agentic Workflows. We call this <a href="https://githubnext.com/projects/continuous-ai/">Continuous AI</a>: the integration of AI into the SDLC, enhancing automation and collaboration similar to continuous integration and continuous deployment (CI/CD) practices.</p>
+
+
+
+<p>GitHub Agentic Workflows and Continuous AI are designed to augment existing CI/CD rather than replace it. They do not replace build, test, or release pipelines, and their use cases largely do not overlap with deterministic CI/CD workflows. Agentic workflows run on GitHub Actions because that is where GitHub provides the necessary infrastructure for permissions, logging, auditing, sandboxed execution, and rich repository context.</p>
+
+
+
+<p>In our own usage at GitHub Next, we&rsquo;re finding new uses for agentic workflows nearly every day. Throughout GitHub, teams have been using agentic workflows to create custom tools for themselves in minutes, replacing chores with intelligence or paving the way for humans to get work done by assembling the right information, in the right place, at the right time. A new world of possibilities is opening for teams and enterprises to keep their repositories healthy, navigable, and high-quality.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-let-s-nbsp-talk-guardrails-and-control-nbsp">Let&rsquo;s&nbsp;talk guardrails and control&nbsp;</h2>
+
+
+
+<p>Designing for safety and control is non-negotiable. GitHub Agentic Workflows implements a defense-in-depth security architecture that protects against unintended behaviors and prompt-injection attacks.</p>
+
+
+
+<p>Workflows run with read-only permissions by default. Write operations require explicit approval through <a href="https://github.github.com/gh-aw/introduction/architecture/">safe outputs</a>, which map to pre-approved, reviewable GitHub operations such as creating a pull request or adding a comment to an issue. Sandboxed execution, tool allowlisting, and network isolation help ensure that coding agents operate within controlled boundaries.</p>
+
+
+
+<p>Guardrails like these make it practical to run agents continuously, not just as one-off experiments. See our <a href="https://github.github.com/gh-aw/introduction/architecture/">security architecture</a> for more details.</p>
+
+
+
+<p>One alternative approach to agentic repository automation is to run coding agent CLIs, such as Copilot or Claude, directly inside a standard GitHub Actions YAML workflow. This approach often grants these agents more permission than is required for a specific task. In contrast, GitHub Agentic Workflows run coding agents with read-only access by default and rely on safe outputs for GitHub operations, providing tighter constraints, clearer review points, and stronger overall control.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-a-simple-example-a-daily-repo-report-nbsp-nbsp">A simple example: A daily repo report&nbsp;&nbsp;</h2>
+
+
+
+<p>Let&rsquo;s look at an agentic workflow which creates a daily status report for repository maintainers.</p>
+
+
+
+<p>In practice, you will usually use AI assistance to <a href="https://github.github.io/gh-aw/setup/creating-workflows/">create your workflows</a>. The easiest way to do this is with an interactive coding agent. For example, with your favorite coding agent, you can enter this prompt:</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>Generate a workflow that creates a daily repo status report for a maintainer. Use the instructions at https://github.com/github/gh-aw/blob/main/create.md</code></pre>
+
+
+
+<p>The coding agent will interact with you to confirm your specific needs and intent, write the Markdown file, and check its validity. You can then review, refine, and validate the workflow before adding it to your repository.</p>
+
+
+
+<p>This will create&nbsp;two files&nbsp;in&nbsp;<code>.github/workflows</code>:&nbsp;</p>
+
+
+
+<ul class="wp-block-list">
+<li><code>daily-repo-status.md</code>&nbsp;(the agentic workflow)&nbsp;&nbsp;</li>
+
+
+
+<li><code>daily-repo-status.lock.yml</code>&nbsp;(the corresponding agentic workflow lock file, which is executed by GitHub Actions)&nbsp;</li>
+</ul>
+
+
+
+<p>The&nbsp;file&nbsp;<code>daily-repo-status.md</code>&nbsp;will look&nbsp;like&nbsp;this:&nbsp;</p>
+
+
+
+<pre class="wp-block-code language-plaintext"><code>--- 
+on: 
+  schedule: daily 
+ 
+permissions: 
+  contents: read 
+  issues: read 
+  pull-requests: read 
+ 
+safe-outputs: 
+  create-issue: 
+    title-prefix: "[repo status] " 
+    labels: [report] 
+ 
+tools: 
+  github: 
+---  
+ 
+# Daily Repo Status Report 
+ 
+Create a daily status report for maintainers. 
+ 
+Include 
+- Recent repository activity (issues, PRs, discussions, releases, code changes) 
+- Progress tracking, goal reminders and highlights 
+- Project status and recommendations 
+- Actionable next steps for maintainers 
+ 
+Keep it concise and link to the relevant issues/PRs.</code></pre>
+
+
+
+<p>This&nbsp;file&nbsp;has two parts:&nbsp;</p>
+
+
+
+<ol start="1" class="wp-block-list">
+<li><strong>Frontmatter</strong>&nbsp;(YAML between&nbsp;<code>---</code>&nbsp;markers) for configuration&nbsp;</li>
+
+
+
+<li><strong>Markdown instructions</strong>&nbsp;that describe the job&nbsp;in natural language&nbsp;in natural language</li>
+</ol>
+
+
+
+<p>The Markdown is the intent, but the trigger, permissions, tools, and allowed outputs are spelled out up front.</p>
+
+
+
+<p>If you prefer,&nbsp;you can&nbsp;add the workflow to your repository&nbsp;manually:&nbsp;</p>
+
+
+
+<ol start="1" class="wp-block-list">
+<li><strong>Create the workflow</strong>: Add&#8239;&nbsp;<code>daily-repo-status.md</code>&#8239;with the frontmatter and instructions.</li>
+
+
+
+<li><strong>Create the lock file</strong>:&nbsp;&nbsp;
+<ul class="wp-block-list">
+<li><code>gh&nbsp;extension install&nbsp;github/gh-aw</code>&#8239;&nbsp;</li>
+
+
+
+<li><code>gh&nbsp;aw compile</code></li>
+</ul>
+</li>
+
+
+
+<li><strong>Commit and push</strong>: Commit and push files to your repository.</li>
+
+
+
+<li><strong>Add any required secrets</strong>: For example,&#8239;<a href="https://github.github.com/gh-aw/reference/engines/" target="_blank" rel="noreferrer noopener">add a token or API key for your coding agent</a>.</li>
+</ol>
+
+
+
+<p>Once you add this workflow to your repository, it will run automatically or you can trigger it manually using GitHub Actions. When the workflow runs, it creates a status report issue like this:</p>
+
+
+
+<figure class="wp-block-image size-large"><img data-recalc-dims="1" loading="lazy" decoding="async" height="566" width="1024" src="https://github.blog/wp-content/uploads/2026/02/Screenshot-2.png?resize=1024%2C566" alt='Screenshot of a GitHub issue titled "Daily Repo Report - February 9, 2026" showing key highlights, including 2 new releases, 1,737 commits from 16 contributors, 100 issues closed with 190 new issues opened, 50 pull requests merged from 93 opened pull requests, and 5 code quality issues opened.' class="wp-image-93734" srcset="https://github.blog/wp-content/uploads/2026/02/Screenshot-2.png?w=1826 1826w, https://github.blog/wp-content/uploads/2026/02/Screenshot-2.png?w=300 300w, https://github.blog/wp-content/uploads/2026/02/Screenshot-2.png?w=768 768w, https://github.blog/wp-content/uploads/2026/02/Screenshot-2.png?w=1024 1024w, https://github.blog/wp-content/uploads/2026/02/Screenshot-2.png?w=1536 1536w" sizes="auto, (max-width: 1000px) 100vw, 1000px" /></figure>
+
+
+
+<h2 class="wp-block-heading" id="h-what-you-can-build-with-github-agentic-workflows-nbsp">What you can build with GitHub Agentic Workflows&nbsp;</h2>
+
+
+
+<p>If you&rsquo;re looking for further inspiration <a href="https://github.github.com/gh-aw/blog/2026-01-12-welcome-to-pelis-agent-factory/">Peli&rsquo;s Agent Factory</a> is a guided tour through a wide range of workflows, with practical patterns you can adapt, remix, and standardize across repos.</p>
+
+
+
+<p>A useful mental model: if repetitive work in a repository can be described in words, it might be a good fit for an agentic workflow.</p>
+
+
+
+<p>If you&rsquo;re looking for design patterns, check out <a href="https://github.github.com/gh-aw/patterns/chatops/" target="_blank" rel="noreferrer noopener">ChatOps</a>, <a href="https://github.github.com/gh-aw/patterns/dailyops/" target="_blank" rel="noreferrer noopener">DailyOps</a>, <a href="https://github.github.com/gh-aw/patterns/dataops/" target="_blank" rel="noreferrer noopener">DataOps</a>, <a href="https://github.github.com/gh-aw/patterns/issueops/" target="_blank" rel="noreferrer noopener">IssueOps</a>, <a href="https://github.github.com/gh-aw/patterns/projectops/" target="_blank" rel="noreferrer noopener">ProjectOps</a>, <a href="https://github.github.com/gh-aw/patterns/multirepoops/" target="_blank" rel="noreferrer noopener">MultiRepoOps,</a> and <a href="https://github.github.com/gh-aw/patterns/orchestration/" target="_blank" rel="noreferrer noopener">Orchestration</a>.</p>
+
+
+
+<p>Uses for agent-assisted repository automation often depend on particular repos and development priorities. Your team&rsquo;s approach to software development will differ from those of other teams. It pays to be imaginative about how you can use agentic automation to augment <em>your</em> team for <em>your</em> repositories for <em>your</em> goals.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-practical-guidance-for-teams-nbsp">Practical guidance for teams&nbsp;</h2>
+
+
+
+<p>Agentic workflows bring a shift in thinking. They work best when you focus on goals and desired outputs rather than perfect prompts. You provide clarity on what success looks like, and allow the workflow to explore how to achieve it. Some boundaries are built into agentic workflows by default, and others are ones you explicitly define. This means the agent can explore and reason, but its conclusions always stay within safe, intentional limits.</p>
+
+
+
+<p>You will find that your workflows can range from very general (&ldquo;Improve the software&rdquo;) to very specific (&ldquo;Check that all technical documentation and error messages for this educational software are written in a style suitable for an audience of age 10 or above&rdquo;). You can choose the level of specificity that&rsquo;s appropriate for your team.</p>
+
+
+
+<p>GitHub Agentic Workflows use coding agents at runtime, which incur billing costs. When using Copilot with default settings, each workflow run typically incurs two <a href="https://docs.github.com/en/billing/concepts/product-billing/github-copilot-premium-requests">premium requests</a>: one for the agentic work and one for a guardrail check through safe outputs. The models used can be configured to help manage these costs. Today, automated uses of Copilot are associated with a user account. For other coding agents, refer to our <a href="https://github.github.com/gh-aw/reference/engines/">documentation</a> for details. Here are a few more tips to help teams get value quickly:</p>
+
+
+
+<ul class="wp-block-list">
+<li>Start with <strong>low-risk outputs</strong> such as comments, drafts, or reports before enabling pull request creation.</li>
+
+
+
+<li>For coding, start with <strong>goal-oriented improvements</strong> such as routine refactoring, test coverage, or code simplification rather than feature work.</li>
+
+
+
+<li>For reports, use instructions that are <strong>specific about what &ldquo;good&rdquo; looks like</strong>, including format, tone, links, and when to stop.</li>
+
+
+
+<li>Agentic workflows create an agent-only, sub-loop that&rsquo;s able to be autonomous because agents are acting under defined terms. But it&rsquo;s important that <strong>humans stay in the broader loop</strong> of forward progress in the repository, through reports, issues, and pull requests. With GitHub Agentic Workflows, <strong>pull requests are never merged automatically</strong>, and humans must always review and approve.</li>
+
+
+
+<li>Treat the workflow Markdown as code. Review changes, keep it small, and evolve it intentionally.</li>
+</ul>
+
+
+
+<p>Continuous AI works best if you use it in conjunction with CI/CD. Don&rsquo;t use agentic workflows as a replacement for GitHub Actions YAML workflows for CI/CD. This approach extends continuous automation to more subjective, repetitive tasks that traditional CI/CD struggle to express.</p>
+
+
+
+<h2 class="wp-block-heading" id="h-build-the-future-nbsp-of-automation-nbsp-with-us-nbsp-nbsp-nbsp">Build the future&nbsp;of automation&nbsp;with us&nbsp;&nbsp;&nbsp;</h2>
+
+
+
+<p>GitHub Agentic Workflows are available now in technical preview and are a collaboration between GitHub, Microsoft Research, and Azure Core Upstream. We invite you to try them out and help us shape the future of repository automation.</p>
+
+
+
+<ul class="wp-block-list">
+<li><a href="https://github.github.com/gh-aw/?utm_source=blog-agentic-workflows-cta&amp;utm_medium=blog&amp;utm_campaign=agentic-workflows-tech-preview-feb-2026" target="_blank" rel="noreferrer noopener">Documentation</a>&nbsp;</li>
+
+
+
+<li><a href="https://github.github.io/gh-aw/introduction/how-they-work/" target="_blank" rel="noreferrer noopener">How they work</a>&nbsp;</li>
+
+
+
+<li><a href="https://github.github.io/gh-aw/setup/quick-start/" target="_blank" rel="noreferrer noopener">Quick start guide</a>&nbsp;</li>
+
+
+
+<li><a href="https://github.github.io/gh-aw/blog/2026-01-12-welcome-to-pelis-agent-factory/" target="_blank" rel="noreferrer noopener">Workflow gallery</a>&nbsp;</li>
+</ul>
+
+
+
+<p>We&rsquo;d love for you to be involved! <a href="https://gh.io/aw-tp-community-feedback">Share your thoughts in the Community discussion</a>, or join us (and tons of other awesome makers) in the #agentic-workflows channel of the <a href="https://gh.io/next-discord">GitHub Next Discord</a>. We look forward to seeing what you build with GitHub Agentic Workflows. Happy automating!</p>
+
+
+
+<div class="wp-block-group post-content-cta has-global-padding is-layout-constrained wp-block-group-is-layout-constrained">
+<p><strong>Try GitHub Agentic Workflows in a repo today</strong>! Install&nbsp;<code>gh-aw</code>, add a starter workflow&nbsp;or create one using AI, and run it. Then, <a href="https://gh.io/aw-tp-community-feedback">share what you build (and what you want next)</a>.&nbsp;</p>
+</div>
+</body></html>
+<p>The post <a href="https://github.blog/ai-and-ml/automate-repository-tasks-with-github-agentic-workflows/">Automate repository tasks with GitHub Agentic Workflows  </a> appeared first on <a href="https://github.blog">The GitHub Blog</a>.</p>
+]]></content>
+		
+			</entry>
+	</feed>

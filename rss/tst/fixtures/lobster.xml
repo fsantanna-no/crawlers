@@ -1,0 +1,304 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0" xmlns:atom="http://www.w3.org/2005/Atom">
+  <channel>
+    <title>Lobsters</title>
+    <link>https://lobste.rs/</link>
+    <atom:link href="https://lobste.rs/rss" rel="self"/>
+    <description></description>
+    <pubDate>Tue, 03 Mar 2026 13:33:30 -0600</pubDate>
+    <ttl>120</ttl>
+    <item>
+      <title>Nobody Gets Promoted for Simplicity</title>
+      <link>https://terriblesoftware.org/2026/03/03/nobody-gets-promoted-for-simplicity/</link>
+      <guid>https://lobste.rs/s/tznewb</guid>
+      <author>terriblesoftware.org via nickmonad</author>
+      <pubDate>Tue, 03 Mar 2026 13:33:30 -0600</pubDate>
+      <comments>https://lobste.rs/s/tznewb/nobody_gets_promoted_for_simplicity</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/tznewb/nobody_gets_promoted_for_simplicity"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>practices</category>
+    </item>
+    <item>
+      <title>Au revoir, Eleventy</title>
+      <link>https://hamatti.org/posts/au-revoir-eleventy/</link>
+      <guid>https://lobste.rs/s/nbsppn</guid>
+      <author>hamatti.org via mwt</author>
+      <pubDate>Wed, 04 Mar 2026 10:48:36 -0600</pubDate>
+      <comments>https://lobste.rs/s/nbsppn/au_revoir_eleventy</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/nbsppn/au_revoir_eleventy"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>javascript</category>
+      <category>web</category>
+    </item>
+    <item>
+      <title>Claude is an Electron App because we’ve lost native</title>
+      <link>https://tonsky.me/blog/fall-of-native/</link>
+      <guid>https://lobste.rs/s/r8kjli</guid>
+      <author>tonsky.me via bhoot</author>
+      <pubDate>Tue, 03 Mar 2026 10:08:22 -0600</pubDate>
+      <comments>https://lobste.rs/s/r8kjli/claude_is_electron_app_because_we_ve_lost</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/r8kjli/claude_is_electron_app_because_we_ve_lost"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>web</category>
+    </item>
+    <item>
+      <title>Claude's Cycles</title>
+      <link>https://www-cs-faculty.stanford.edu/~knuth/papers/claude-cycles.pdf</link>
+      <guid>https://lobste.rs/s/teexox</guid>
+      <author>www-cs-faculty.stanford.edu via Nezteb</author>
+      <pubDate>Tue, 03 Mar 2026 14:58:01 -0600</pubDate>
+      <comments>https://lobste.rs/s/teexox/claude_s_cycles</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/teexox/claude_s_cycles"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>pdf</category>
+      <category>compsci</category>
+      <category>vibecoding</category>
+    </item>
+    <item>
+      <title>California's Digital Age Assurance Act, and FOSS</title>
+      <link>https://runxiyu.org/comp/ab1043/</link>
+      <guid>https://lobste.rs/s/hz6vhv</guid>
+      <author>runxiyu.org by runxiyu</author>
+      <pubDate>Tue, 03 Mar 2026 21:32:02 -0600</pubDate>
+      <comments>https://lobste.rs/s/hz6vhv/california_s_digital_age_assurance_act</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/hz6vhv/california_s_digital_age_assurance_act"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>privacy</category>
+      <category>law</category>
+    </item>
+    <item>
+      <title>Never snooze a future</title>
+      <link>https://jacko.io/snooze.html</link>
+      <guid>https://lobste.rs/s/isuqoa</guid>
+      <author>jacko.io via thunderseethe</author>
+      <pubDate>Tue, 03 Mar 2026 21:49:04 -0600</pubDate>
+      <comments>https://lobste.rs/s/isuqoa/never_snooze_future</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/isuqoa/never_snooze_future"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>rust</category>
+    </item>
+    <item>
+      <title>RTL: WTF: Read the web like Right-to-Left readers do</title>
+      <link>https://rtl.wtf/</link>
+      <guid>https://lobste.rs/s/2ng9uk</guid>
+      <author>rtl.wtf via kana</author>
+      <pubDate>Wed, 04 Mar 2026 02:54:08 -0600</pubDate>
+      <comments>https://lobste.rs/s/2ng9uk/rtl_wtf_read_web_like_right_left_readers_do</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/2ng9uk/rtl_wtf_read_web_like_right_left_readers_do"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>web</category>
+      <category>a11y</category>
+    </item>
+    <item>
+      <title>RE#: how we built the world's fastest regex engine in F#</title>
+      <link>https://iev.ee/blog/resharp-how-we-built-the-fastest-regex-in-fsharp/</link>
+      <guid>https://lobste.rs/s/46iep3</guid>
+      <author>iev.ee via wareya</author>
+      <pubDate>Wed, 04 Mar 2026 08:25:15 -0600</pubDate>
+      <comments>https://lobste.rs/s/46iep3/re_how_we_built_world_s_fastest_regex</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/46iep3/re_how_we_built_world_s_fastest_regex"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>programming</category>
+      <category>ml</category>
+      <category>performance</category>
+    </item>
+    <item>
+      <title>Smalltalk’s Browser: Unbeatable, Yet Not Enough</title>
+      <link>https://blog.lorenzano.eu/smalltalks-browser-unbeatable-yet-not-enough/</link>
+      <guid>https://lobste.rs/s/3df9bm</guid>
+      <author>blog.lorenzano.eu via josephjnk</author>
+      <pubDate>Wed, 04 Mar 2026 10:34:33 -0600</pubDate>
+      <comments>https://lobste.rs/s/3df9bm/smalltalk_s_browser_unbeatable_yet_not</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/3df9bm/smalltalk_s_browser_unbeatable_yet_not"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>editors</category>
+    </item>
+    <item>
+      <title>What alternatives exist for Anonymous Github?</title>
+      <link>https://lobste.rs/s/brkdxd/what_alternatives_exist_for_anonymous</link>
+      <guid>https://lobste.rs/s/brkdxd</guid>
+      <author> by mhm</author>
+      <pubDate>Wed, 04 Mar 2026 10:08:39 -0600</pubDate>
+      <comments>https://lobste.rs/s/brkdxd/what_alternatives_exist_for_anonymous</comments>
+      <description>&lt;p&gt;Anonymous Github [1] allows hosting anonymous snapshots of git repositories which is mainly useful for disclosing sources in double-blinded conferences. But as the name suggests, it requires the repository to be hosted on Github first. As someone who has mostly steered away from Github, I am looking for alternatives to such a service.&lt;/p&gt;
+&lt;p&gt;1: &lt;a href="https://anonymous.4open.science" rel="ugc"&gt;https://anonymous.4open.science&lt;/a&gt;&lt;/p&gt;
+</description>
+      <category>vcs</category>
+      <category>ask</category>
+    </item>
+    <item>
+      <title>Advanced Terraform performance optimization</title>
+      <link>https://www.bejarano.io/terraform-performance/</link>
+      <guid>https://lobste.rs/s/dzh1vd</guid>
+      <author>bejarano.io by ricardbejarano</author>
+      <pubDate>Wed, 04 Mar 2026 10:38:36 -0600</pubDate>
+      <comments>https://lobste.rs/s/dzh1vd/advanced_terraform_performance</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/dzh1vd/advanced_terraform_performance"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>devops</category>
+    </item>
+    <item>
+      <title>Package Managers Need to Cool Down</title>
+      <link>https://nesbitt.io/2026/03/04/package-managers-need-to-cool-down.html</link>
+      <guid>https://lobste.rs/s/dc3ysd</guid>
+      <author>nesbitt.io via JamieTanna</author>
+      <pubDate>Wed, 04 Mar 2026 05:11:02 -0600</pubDate>
+      <comments>https://lobste.rs/s/dc3ysd/package_managers_need_cool_down</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/dc3ysd/package_managers_need_cool_down"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>practices</category>
+    </item>
+    <item>
+      <title>Rust zero-cost abstractions vs. SIMD</title>
+      <link>https://turbopuffer.com/blog/zero-cost</link>
+      <guid>https://lobste.rs/s/2gwqlh</guid>
+      <author>turbopuffer.com via emschwartz</author>
+      <pubDate>Tue, 03 Mar 2026 14:00:27 -0600</pubDate>
+      <comments>https://lobste.rs/s/2gwqlh/rust_zero_cost_abstractions_vs_simd</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/2gwqlh/rust_zero_cost_abstractions_vs_simd"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>rust</category>
+      <category>performance</category>
+    </item>
+    <item>
+      <title>Four months of Ruby Central moving Ruby backward</title>
+      <link>https://andre.arko.net/2026/03/03/four-months-of-ruby-central-moving-ruby-backward/</link>
+      <guid>https://lobste.rs/s/g6moku</guid>
+      <author>andre.arko.net via jaredwhite</author>
+      <pubDate>Tue, 03 Mar 2026 16:31:14 -0600</pubDate>
+      <comments>https://lobste.rs/s/g6moku/four_months_ruby_central_moving_ruby</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/g6moku/four_months_ruby_central_moving_ruby"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>ruby</category>
+    </item>
+    <item>
+      <title>Faster C software with Dynamic Feature Detection</title>
+      <link>https://gist.github.com/jjl/d998164191af59a594500687a679b98d</link>
+      <guid>https://lobste.rs/s/dzcrf7</guid>
+      <author>gist.github.com via fanf</author>
+      <pubDate>Wed, 04 Mar 2026 12:00:35 -0600</pubDate>
+      <comments>https://lobste.rs/s/dzcrf7/faster_c_software_with_dynamic_feature</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/dzcrf7/faster_c_software_with_dynamic_feature"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>c</category>
+    </item>
+    <item>
+      <title>pg_jitter: Better JIT for Postgres</title>
+      <link>https://github.com/vladich/pg_jitter</link>
+      <guid>https://lobste.rs/s/oi2emm</guid>
+      <author>github.com via fanf</author>
+      <pubDate>Wed, 04 Mar 2026 04:15:36 -0600</pubDate>
+      <comments>https://lobste.rs/s/oi2emm/pg_jitter_better_jit_for_postgres</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/oi2emm/pg_jitter_better_jit_for_postgres"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>databases</category>
+      <category>compilers</category>
+    </item>
+    <item>
+      <title>Proposal: Add `Guix` tag</title>
+      <link>https://lobste.rs/s/ya5b5h/proposal_add_guix_tag</link>
+      <guid>https://lobste.rs/s/ya5b5h</guid>
+      <author> by untrusem</author>
+      <pubDate>Wed, 04 Mar 2026 02:24:51 -0600</pubDate>
+      <comments>https://lobste.rs/s/ya5b5h/proposal_add_guix_tag</comments>
+      <description>&lt;p&gt;It is viewed as just a nix fork with scheme on top of in many communities I am in, while yes it might be started off as that but it has grown significantly in the recent years that it should be treated as its own project.&lt;/p&gt;
+&lt;p&gt;I have been just in guix community for like year and so but I have seen very good changes, some of them would&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;The new rust build system&lt;/li&gt;
+&lt;li&gt;Moving to Codeberg (this brought many new contributors)&lt;/li&gt;
+&lt;li&gt;new v1.5.0 release :)&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;But what I like most about the guix project is the people there, It is small but very tightly-knit community. So I believe guix deserve its own tag now.&lt;/p&gt;
+&lt;p&gt;ps - I am adding more text that follows the guidelines, thanks &lt;a href="https://lobste.rs/~gerikson" rel="ugc"&gt;@gerikson&lt;/a&gt; for pointing this out&lt;/p&gt;
+&lt;hr&gt;
+&lt;p&gt;Name: "guix"&lt;/p&gt;
+&lt;p&gt;Description: "A transactional scheme based package manager and distribution"&lt;/p&gt;
+&lt;p&gt;Category: package management, declarative configuration&lt;/p&gt;
+&lt;p&gt;Similar tag: nix&lt;/p&gt;
+&lt;p&gt;Recent Stories:&lt;/p&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;a href="https://lobste.rs/s/98geyn/64_bit_hurd_has_landed_guix" rel="ugc"&gt;https://lobste.rs/s/98geyn/64_bit_hurd_has_landed_guix&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://lobste.rs/s/oysfmo/debugging_reproducibility_issues_rust" rel="ugc"&gt;https://lobste.rs/s/oysfmo/debugging_reproducibility_issues_rust&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://lobste.rs/s/6audzp/hacklog_diffing_comparing_guix" rel="ugc"&gt;https://lobste.rs/s/6audzp/hacklog_diffing_comparing_guix&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://lobste.rs/s/4zmz17/setting_up_cuirass_locally" rel="ugc"&gt;https://lobste.rs/s/4zmz17/setting_up_cuirass_locally&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://lobste.rs/s/ytqpkb/how_i_manage_my_guix_system_configs" rel="ugc"&gt;https://lobste.rs/s/ytqpkb/how_i_manage_my_guix_system_configs&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://lobste.rs/s/uysha5/adventures_guix_packaging" rel="ugc"&gt;https://lobste.rs/s/uysha5/adventures_guix_packaging&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://lobste.rs/s/koagyg/guix_system_first_impressions_as_nix_user" rel="ugc"&gt;https://lobste.rs/s/koagyg/guix_system_first_impressions_as_nix_user&lt;/a&gt;&lt;/li&gt;
+&lt;li&gt;&lt;a href="https://lobste.rs/s/zhsi80/gnu_guix_1_5_0_released" rel="ugc"&gt;https://lobste.rs/s/zhsi80/gnu_guix_1_5_0_released&lt;/a&gt;&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;People who use nix might want to filter out guix stories that have got nothing to do with it and vice-versa for guix people.&lt;/p&gt;
+&lt;p&gt;The increased complexity for submitter and mods is justified by the fact that this tag will set a clear distinction between the two and this should make it easy for both submitter and mods as tagging &lt;code&gt;gnu guix 1.5.0&lt;/code&gt; release as nix tag doesn't seem right.&lt;/p&gt;
+</description>
+      <category>meta</category>
+    </item>
+    <item>
+      <title>The Markless Document Markup Standard</title>
+      <link>https://shirakumo.org/docs/markless/</link>
+      <guid>https://lobste.rs/s/hu6tos</guid>
+      <author>shirakumo.org via FedericoSchonborn</author>
+      <pubDate>Tue, 03 Mar 2026 17:29:32 -0600</pubDate>
+      <comments>https://lobste.rs/s/hu6tos/markless_document_markup_standard</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/hu6tos/markless_document_markup_standard"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>programming</category>
+    </item>
+    <item>
+      <title>SingleFile: Web Extension for saving a faithful copy of a complete web page in a single HTML file</title>
+      <link>https://github.com/gildas-lormeau/SingleFile</link>
+      <guid>https://lobste.rs/s/ii2iaw</guid>
+      <author>github.com via edwardloveall</author>
+      <pubDate>Wed, 04 Mar 2026 12:57:07 -0600</pubDate>
+      <comments>https://lobste.rs/s/ii2iaw/singlefile_web_extension_for_saving</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/ii2iaw/singlefile_web_extension_for_saving"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>web</category>
+    </item>
+    <item>
+      <title>US Supreme Court declines to hear dispute over copyrights for AI-generated material</title>
+      <link>https://www.reuters.com/legal/government/us-supreme-court-declines-hear-dispute-over-copyrights-ai-generated-material-2026-03-02/</link>
+      <guid>https://lobste.rs/s/of77cp</guid>
+      <author>reuters.com via pushcx</author>
+      <pubDate>Tue, 03 Mar 2026 08:09:45 -0600</pubDate>
+      <comments>https://lobste.rs/s/of77cp/us_supreme_court_declines_hear_dispute</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/of77cp/us_supreme_court_declines_hear_dispute"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>law</category>
+      <category>vibecoding</category>
+    </item>
+    <item>
+      <title>jj v0.39.0 released</title>
+      <link>https://github.com/jj-vcs/jj/releases/tag/v0.39.0</link>
+      <guid>https://lobste.rs/s/dmdttx</guid>
+      <author>github.com via ucirello</author>
+      <pubDate>Wed, 04 Mar 2026 13:49:16 -0600</pubDate>
+      <comments>https://lobste.rs/s/dmdttx/jj_v0_39_0_released</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/dmdttx/jj_v0_39_0_released"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>vcs</category>
+    </item>
+    <item>
+      <title>Based base64 (now with more steganography!)</title>
+      <link>https://blog.jordan.matelsky.com/bb64/</link>
+      <guid>https://lobste.rs/s/tmnv1c</guid>
+      <author>blog.jordan.matelsky.com via sharp</author>
+      <pubDate>Wed, 04 Mar 2026 08:11:43 -0600</pubDate>
+      <comments>https://lobste.rs/s/tmnv1c/based_base64_now_with_more_steganography</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/tmnv1c/based_base64_now_with_more_steganography"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>compsci</category>
+      <category>art</category>
+    </item>
+    <item>
+      <title>Pocket ID: Easy Passkey Authentication</title>
+      <link>https://runtimeterror.dev/pocket-id-easy-passkey-authentication/</link>
+      <guid>https://lobste.rs/s/lw8rsa</guid>
+      <author>runtimeterror.dev via abnercoimbre</author>
+      <pubDate>Wed, 04 Mar 2026 12:26:47 -0600</pubDate>
+      <comments>https://lobste.rs/s/lw8rsa/pocket_id_easy_passkey_authentication</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/lw8rsa/pocket_id_easy_passkey_authentication"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>security</category>
+    </item>
+    <item>
+      <title>An Interactive Intro to CRDTs</title>
+      <link>https://jakelazaroff.com/words/an-interactive-intro-to-crdts/</link>
+      <guid>https://lobste.rs/s/oe6l1z</guid>
+      <author>jakelazaroff.com via linkdd</author>
+      <pubDate>Tue, 03 Mar 2026 15:53:54 -0600</pubDate>
+      <comments>https://lobste.rs/s/oe6l1z/interactive_intro_crdts</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/oe6l1z/interactive_intro_crdts"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>programming</category>
+      <category>distributed</category>
+    </item>
+    <item>
+      <title>What Is Code Review For?</title>
+      <link>https://blog.glyph.im/2026/03/what-is-code-review-for.html</link>
+      <guid>https://lobste.rs/s/vkyalo</guid>
+      <author>blog.glyph.im via carlana</author>
+      <pubDate>Wed, 04 Mar 2026 07:44:51 -0600</pubDate>
+      <comments>https://lobste.rs/s/vkyalo/what_is_code_review_for</comments>
+      <description>&lt;p&gt;&lt;a href="https://lobste.rs/s/vkyalo/what_is_code_review_for"&gt;Comments&lt;/a&gt;&lt;/p&gt;</description>
+      <category>practices</category>
+      <category>vibecoding</category>
+    </item>
+  </channel>
+</rss>
