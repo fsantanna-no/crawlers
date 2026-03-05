@@ -1,6 +1,6 @@
 TESTS = \
-    detect.sh \
-    extract.sh
+    detect.lua \
+    extract.lua
 
 .PHONY: all $(TESTS)
 
@@ -8,4 +8,4 @@ all: $(TESTS)
 	@echo "all tests passed"
 
 $(TESTS):
-	@bash $@ $(CURDIR)
+	@lua5.4 $@ $(CURDIR)

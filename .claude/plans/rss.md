@@ -19,15 +19,15 @@ Everything lives under `rss/`:
 
 ```
 rss/
-    crawler.sh          ← main script
+    crawler.lua         ← main script
     tst/
         Makefile        ← test runner
-        detect.sh       ← test: feed type detection
-        extract.sh      ← test: jq item extraction
-        sha256.sh       ← test: sha256 filename
-        dedup.sh        ← test: idempotency
-        rfc2822.sh      ← test: message format
-        pipeline.sh     ← test: end-to-end
+        detect.lua      ← test: feed type detection
+        extract.lua     ← test: jq item extraction
+        sha256.lua      ← test: sha256 filename
+        dedup.lua       ← test: idempotency
+        rfc2822.lua     ← test: message format
+        pipeline.lua    ← test: end-to-end
         fixtures/
             akita.xml   ← saved akitaonrails feed sample
             hn.xml      ← saved HN official feed sample
@@ -39,7 +39,7 @@ README.md               ← update with usage
 ## Architecture
 
 ```
-rss/crawler.sh <output-dir> <url>
+rss/crawler.lua <output-dir> <url>
 ┌─────────────────────────────────────────────────┐
 │ 1. mkdir -p <output-dir>                         │
 │                                                  │
@@ -106,7 +106,7 @@ Third run:   12 files exist → 0 new, nothing written
 ## crawler.sh
 
 ```
-rss/crawler.sh <output-dir> <url>
+rss/crawler.lua <output-dir> <url>
 ```
 
 - Single feed per invocation
@@ -187,25 +187,25 @@ testing.
 
 ```crontab
 # Fetch Akita on Rails every hour
-0 * * * * /x/freechains/crawlers/rss/crawler.sh \
+0 * * * * /x/freechains/crawlers/rss/crawler.lua \
     /home/chico/feeds/akita \
     "https://www.akitaonrails.com/index.xml" \
     2>> /home/chico/log/rss.log
 
 # Fetch HN front page every 15 minutes
-*/15 * * * * /x/freechains/crawlers/rss/crawler.sh \
+*/15 * * * * /x/freechains/crawlers/rss/crawler.lua \
     /home/chico/feeds/hn \
     "https://news.ycombinator.com/rss" \
     2>> /home/chico/log/rss.log
 
 # Fetch Lobsters every 30 minutes
-*/30 * * * * /x/freechains/crawlers/rss/crawler.sh \
+*/30 * * * * /x/freechains/crawlers/rss/crawler.lua \
     /home/chico/feeds/lobster \
     "https://lobste.rs/rss" \
     2>> /home/chico/log/rss.log
 
 # Fetch GitHub Blog every 2 hours
-0 */2 * * * /x/freechains/crawlers/rss/crawler.sh \
+0 */2 * * * /x/freechains/crawlers/rss/crawler.lua \
     /home/chico/feeds/github \
     "https://github.blog/all.atom" \
     2>> /home/chico/log/rss.log
@@ -222,7 +222,7 @@ Result:
 
 ## Incremental Implementation (test-first)
 
-Shell tests with assert-like checks.
+Lua tests with assert checks.
 XML fixtures for offline testing.
 Run: `cd rss && make -C tst`
 
@@ -252,20 +252,20 @@ Run: `cd rss && make -C tst`
 ## Verification
 
 1. `cd rss && make -C tst` → all tests pass
-2. `rss/crawler.sh /tmp/feeds <url>` → manual test
+2. `lua5.4 rss/crawler.lua /tmp/feeds <url>` → manual test
 3. Re-run same command → "0 new" (idempotency)
 
 ## Progress
 
 - [x] Install yq
 - [x] Save XML fixtures (akita, hn, lobster, github)
-- [x] Skeleton crawler.sh (shebang, arg parsing)
+- [x] Skeleton crawler.lua (shebang, arg parsing)
 - [x] Steps 1: yq XML→JSON
 - [x] Steps 2: Detect feed type
 - [x] Steps 3: Extract items (jq filters)
 - [ ] Steps 4: sha256 + dedup
 - [ ] Steps 5: RFC 2822 formatting
 - [ ] Steps 6: Integration tests
-- [ ] crawler.sh complete
+- [ ] crawler.lua complete
 - [ ] Update README.md
 - [ ] Manual testing
