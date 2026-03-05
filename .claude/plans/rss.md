@@ -260,9 +260,9 @@ Run: `cd rss && make -C tst`
 - [x] Install yq
 - [x] Save XML fixtures (akita, hn, lobster, github)
 - [x] Skeleton crawler.sh (shebang, arg parsing)
-- [ ] Steps 1: yq XML→JSON
-- [ ] Steps 2: Detect feed type
-- [ ] Steps 3: Extract items (jq filters)
+- [x] Steps 1: yq XML→JSON
+- [x] Steps 2: Detect feed type
+- [x] Steps 3: Extract items (jq filters)
 - [ ] Steps 4: sha256 + dedup
 - [ ] Steps 5: RFC 2822 formatting
 - [ ] Steps 6: Integration tests

@@ -1,5 +1,6 @@
 TESTS = \
-    detect.sh
+    detect.sh \
+    extract.sh
 
 .PHONY: all $(TESTS)
 
